@@ -117,6 +117,21 @@ export async function reorderFolders(orderedIds) {
 
 /* ---------------- プロンプト ---------------- */
 
+/**
+ * 版に含まれる「その時点のプロンプトの中身」。
+ * 復元と未確定判定で同じ定義を使い、取りこぼしが出ないようにする。
+ */
+export const snapshotOf = (source) => ({
+  title: source.title ?? '',
+  summary: source.summary ?? '',
+  tags: clone(source.tags ?? []),
+  sections: clone(source.sections ?? []),
+  variables: clone(source.variables ?? {}),
+});
+
+/** 2 つのスナップショットが同じ内容か */
+export const sameSnapshot = (a, b) => JSON.stringify(snapshotOf(a)) === JSON.stringify(snapshotOf(b));
+
 export const getPrompt = (id) => state.prompts.find((p) => p.id === id) ?? null;
 
 export async function addPrompt(patch = {}) {
@@ -143,15 +158,18 @@ export async function deletePrompt(id) {
   emit('prompts');
 }
 
-export async function duplicatePrompt(id) {
+/**
+ * プロンプトを丸ごと複製する（変数の値も引き継ぐ）。
+ * @param {{keepVariables?:boolean}} opts 変数の値を空にしたいときは false
+ */
+export async function duplicatePrompt(id, { keepVariables = true } = {}) {
   const src = getPrompt(id);
   if (!src) return null;
   return addPrompt({
-    folderId: src.folderId,
+    ...snapshotOf(src),
     title: `${src.title || '無題'} のコピー`,
-    summary: src.summary,
-    tags: clone(src.tags),
-    sections: clone(src.sections).map((s) => ({ ...s })),
+    variables: keepVariables ? clone(src.variables ?? {}) : {},
+    folderId: src.folderId,
     status: 'draft',
     revisionCount: 0,
   });
@@ -199,13 +217,7 @@ export async function deleteRevision(revId, promptId) {
 export async function restoreRevision(promptId, revId) {
   const [prompt, rev] = [getPrompt(promptId), await getRevision(revId)];
   if (!prompt || !rev) throw new Error('復元元が見つかりません');
-  return savePrompt({
-    ...prompt,
-    title: rev.title || prompt.title,
-    summary: rev.summary,
-    tags: clone(rev.tags),
-    sections: clone(rev.sections),
-  });
+  return savePrompt({ ...prompt, ...snapshotOf(rev) });
 }
 
 /* ---------------- 部品（再利用候補） ---------------- */

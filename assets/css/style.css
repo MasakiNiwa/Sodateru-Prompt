@@ -434,9 +434,19 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .switch input:focus-visible + .switch__track { outline: 3px solid var(--md-primary); outline-offset: 2px; }
 
 /* Segmented button */
-.segmented { display: inline-flex; border-radius: var(--r-full); overflow: hidden; box-shadow: inset 0 0 0 1px var(--md-outline-variant); max-width: 100%; }
+/* 収まらないときは切り捨てずに横スクロールさせる
+   （overflow:hidden だと末尾の選択肢に触れなくなる） */
+.segmented {
+  display: inline-flex; max-width: 100%;
+  border-radius: var(--r-full);
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  box-shadow: inset 0 0 0 1px var(--md-outline-variant);
+}
+.segmented::-webkit-scrollbar { display: none; }
 .segmented button {
-  flex: 1 1 auto; min-height: 38px; padding: 0 14px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 0 0 auto; min-height: 38px; padding: 0 14px;
   background: transparent; border: 0; cursor: pointer;
   font-size: .82rem; font-weight: 600; color: var(--md-on-surface-variant);
   white-space: nowrap;
@@ -559,7 +569,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .secard__body {
   /* 高さは JS が中身に合わせて伸縮させるので、手動リサイズは無効にする */
-  display: block; width: 100%; min-height: 64px; padding: 12px 14px;
+  display: block; width: 100%; min-height: 48px; padding: 10px 14px;
   background: transparent; border: 0; outline: none; resize: none; overflow: hidden;
   font-family: var(--font-mono); font-size: var(--editor-font-size); line-height: 1.7;
 }
@@ -744,10 +754,10 @@ html[data-theme="dark"] .snackbar button, :root[data-theme="dark"] .snackbar but
 @media (min-width: 900px) { :root { --sec-indent: 26px; } }
 
 .secard {
-  /* --sec-depth は 0 始まりの深さ。カードごとにインラインで与えられる */
-  margin-left: calc(var(--sec-depth, 0) * var(--sec-indent));
+  /* 階層で字下げしない。深さはガイド線と見出しの大きさで表し、
+     本文の幅は階層によらず一定に保つ */
   border-left: 3px solid var(--md-outline-variant);
-  transition: border-color var(--motion), opacity var(--motion), box-shadow var(--motion), margin-left var(--motion);
+  transition: border-color var(--motion), opacity var(--motion), box-shadow var(--motion);
 }
 /* 階層は 1 色の濃淡で表す（色数を増やさない） */
 .secard[data-level="1"] { border-left-color: var(--md-primary); }
@@ -882,3 +892,139 @@ details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; 
   font-size: .8rem; font-weight: 500; color: var(--md-on-surface-variant);
 }
 .select--plain:hover { background-color: var(--md-surface-container-highest); }
+
+/* ---------- 18. エディタ再設計（v0.4） ---------- */
+
+/* 普段は見出し行だけが目に入るよう、カードの主張を弱める */
+.secard__head { gap: 4px; padding: 6px 6px 6px 10px; }
+.secard.is-selected { border-color: var(--md-primary); }
+.secard.is-selected .secard__head { background: var(--md-surface-container-high); }
+
+/* 階層のガイド線（字下げの代わり） */
+.secard__rail { display: inline-flex; gap: 3px; flex: none; padding-left: 2px; }
+.secard__rail i { width: 2px; height: 15px; border-radius: 1px; background: var(--md-outline-variant); }
+.secard__count {
+  flex: none; padding: 0 7px; border-radius: var(--r-full);
+  background: var(--md-surface-container-highest);
+}
+
+/* 選んでいるとき（と構造整理中）だけ現れる操作列 */
+.secard__tools {
+  display: none;
+  align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 4px 8px 6px 10px;
+  border-top: 1px solid var(--md-outline-variant);
+}
+.secard.is-selected .secard__tools,
+.seceditor.is-structure .secard__tools { display: flex; }
+.secard__tools-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--md-outline-variant); }
+
+.secard__peek {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px 8px;
+  font-size: .8rem; color: var(--md-on-surface-variant);
+}
+.secard__peek > span:first-child {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+/* 構造整理モードは行を詰めて、全体の形が見えるようにする */
+.seceditor.is-structure .secard__body { display: none; }
+.seceditor.is-structure { gap: 6px; }
+
+.editor-meta { margin-bottom: 12px; padding: 12px 16px; }
+.editor-toolbar { margin-bottom: 12px; gap: 8px; }
+.editor-hint { margin: -4px 0 12px; }
+.editor-vars {
+  margin-bottom: 12px; padding: 6px 12px;
+  background: var(--md-surface-container-low); border-radius: var(--r-s);
+}
+
+/* ---------- アウトライン（目次） ---------- */
+.outline { display: none; }
+.edit-layout.has-outline .outline {
+  display: flex; flex-direction: column;
+  background: var(--md-surface-container-low);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--r-m);
+  overflow: hidden;
+}
+.outline__head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 14px;
+  font-size: .78rem; font-weight: 700; color: var(--md-on-surface-variant);
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+.outline__list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1 1 auto; }
+.outline__item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 10px 6px calc(10px + var(--d, 0) * 14px);
+  border: 0; border-radius: var(--r-s);
+  background: transparent; color: var(--md-on-surface-variant);
+  font-size: .82rem; text-align: left; cursor: pointer;
+  transition: background var(--motion), color var(--motion);
+}
+.outline__item > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outline__item[data-level="1"] { font-weight: 700; color: var(--md-on-surface); }
+.outline__item:hover { background: var(--md-surface-container-high); }
+.outline__item.is-current { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.outline__add {
+  display: flex; align-items: center; gap: 6px;
+  margin: 4px 6px 8px; padding: 8px 10px;
+  border: 0; border-radius: var(--r-s);
+  background: transparent; color: var(--md-primary);
+  font-size: .82rem; font-weight: 600; cursor: pointer;
+}
+.outline__add:hover { background: color-mix(in srgb, var(--md-primary) 10%, transparent); }
+.outline--dialog { display: flex; flex-direction: column; max-height: 60vh; }
+.outline--dialog .outline__list { padding: 0; }
+
+/* ---------- 3 カラムの組み立て ---------- */
+@media (min-width: 1000px) {
+  .edit-layout { display: grid; gap: 20px; align-items: start; grid-template-columns: minmax(0, 1fr); }
+  .edit-layout > .edit-main { grid-row: 1; }
+  .edit-layout.has-outline { grid-template-columns: 220px minmax(0, 1fr); }
+  .edit-layout.has-outline > .outline {
+    grid-row: 1; grid-column: 1;
+    position: sticky; top: 92px; max-height: calc(100vh - 116px);
+  }
+  .edit-layout.has-outline > .edit-main { grid-column: 2; }
+  .edit-layout.is-preview { grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); }
+  .edit-layout.is-preview > .edit-preview { grid-column: 2; }
+  .edit-layout.is-preview > .edit-main { grid-column: 1; }
+}
+@media (min-width: 1360px) {
+  .edit-layout.has-outline.is-preview { grid-template-columns: 220px minmax(0, 1fr) minmax(260px, 340px); }
+  .edit-layout.has-outline.is-preview > .outline { grid-column: 1; }
+  .edit-layout.has-outline.is-preview > .edit-main { grid-column: 2; }
+  .edit-layout.has-outline.is-preview > .edit-preview { grid-column: 3; }
+}
+/* 目次とプレビューを同時に出すには狭すぎるときは、目次を引っ込める */
+@media (min-width: 1000px) and (max-width: 1359px) {
+  .edit-layout.has-outline.is-preview > .outline { display: none; }
+  .edit-layout.has-outline.is-preview { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
+  .edit-layout.has-outline.is-preview > .edit-main { grid-column: 1; }
+  .edit-layout.has-outline.is-preview > .edit-preview { grid-column: 2; }
+}
+/* 狭い画面では目次はダイアログで開く */
+@media (max-width: 999px) {
+  .edit-layout.has-outline .outline { display: none; }
+}
+
+/* ---------- 集中エディタ ---------- */
+.scrim.focus { padding: 12px; }
+.scrim.focus .dialog { width: min(920px, 100%); height: min(92vh, 900px); }
+.scrim.focus .dialog__head { padding-bottom: 4px; }
+.scrim.focus .dialog__head h2 { font-size: 1rem; color: var(--md-on-surface-variant); }
+.scrim.focus .dialog__body { display: flex; flex-direction: column; gap: 10px; }
+.focus-title { font-size: 1.05rem; font-weight: 600; }
+.focus-body { flex: 1 1 auto; min-height: 0; resize: none; }
+
+/* 構造整理モードは 1 セクションの縦を詰め、並びと階層だけが見えるようにする */
+.seceditor.is-structure .secard__peek { padding: 2px 12px 3px; }
+.seceditor.is-structure .secard__tools { padding: 2px 8px 5px 10px; border-top: 0; }
+.seceditor.is-structure .secard__tools [data-chars],
+.seceditor.is-structure .secard__tools [data-act="focus"],
+.seceditor.is-structure .secard__tools .spacer { display: none; }
+.seceditor.is-structure .secard__head { padding-block: 4px; }

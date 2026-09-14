@@ -1,0 +1,35 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 依存は 0 件なので install は不要
+      - name: Run unit tests
+        run: npm test
+
+      # 構文エラーがあれば静的サイトは丸ごと動かなくなるので、全モジュールを検査する
+      - name: Check every module parses
+        run: |
+          set -e
+          fail=0
+          for f in $(find assets/js sw.js -name '*.js'); do
+            cp "$f" "/tmp/$(echo "$f" | tr '/' '_')x.mjs"
+            node --check "/tmp/$(echo "$f" | tr '/' '_')x.mjs" || { echo "syntax error: $f"; fail=1; }
+          done
+          exit $fail
