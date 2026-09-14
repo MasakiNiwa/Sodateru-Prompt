@@ -1,0 +1,24 @@
+{
+  "name": "育てるプロンプト",
+  "short_name": "育てるプロンプト",
+  "description": "プロンプトを育てるシステムノート。プロンプトのメモ・構造化・再利用を実現するローカルファーストな知識管理ツール。",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5fbf5",
+  "theme_color": "#226a4b",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    { "src": "./assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./assets/icons/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "新しいプロンプト", "url": "./#/prompts?new=1" },
+    { "name": "部品ライブラリ", "url": "./#/snippets" }
+  ]
+}
