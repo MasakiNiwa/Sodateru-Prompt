@@ -29,6 +29,33 @@ const TABS = [
   { id: 'output', label: '出力', icon: 'output' },
 ];
 
+/**
+ * 折りたたみとプレビューは「その端末での見え方」であって作品の中身ではないので、
+ * プロンプトのデータには混ぜず localStorage に置く（版や差分を汚さないため）。
+ */
+const FOLD_KEY = (id) => `sodateru-prompt.folded.${id}`;
+const PREVIEW_KEY = 'sodateru-prompt.preview';
+
+function loadFolded(promptId) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FOLD_KEY(promptId)) ?? '[]');
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistView() {
+  try {
+    localStorage.setItem(FOLD_KEY(view.promptId), JSON.stringify([...view.folded]));
+    localStorage.setItem(PREVIEW_KEY, view.showPreview ? '1' : '0');
+  } catch { /* 保存できなくても表示は続けられる */ }
+}
+
+const loadPreviewPref = () => {
+  try { return localStorage.getItem(PREVIEW_KEY) === '1'; } catch { return false; }
+};
+
 /** 画面内で保持する状態（プロンプトを切り替えたらリセット） */
 let view = null;
 
@@ -45,6 +72,8 @@ function resetView(promptId) {
     outputFormat: store.state.settings.defaultExportFormat ?? 'markdown',
     showUnchanged: false,
     applyVars: true,
+    folded: loadFolded(promptId),
+    showPreview: loadPreviewPref(),
   };
 }
 
@@ -158,19 +187,40 @@ const LEVEL_OPTIONS = (level) => LEVEL_LABELS
 function sectionCard(s, i, sections) {
   const level = levelOf(s);
   const childCount = subtreeRange(sections, i)[1] - i - 1;
-  return `
-    <article class="secard ${s.enabled === false ? 'is-disabled' : ''}"
-      data-sec="${escapeHtml(s.id)}" data-level="${level}" style="--sec-depth:${level - 1}">
+  const folded = view.folded.has(s.id);
+  const head = `
       <header class="secard__head">
         <button type="button" class="secard__drag" data-act="drag" draggable="true"
           aria-label="ドラッグして並び替え" title="ドラッグして並び替え">${icon('drag', 'icon icon-sm')}</button>
+        <button type="button" class="secard__fold" data-act="fold" aria-expanded="${!folded}"
+          aria-label="${folded ? '広げる' : '折りたたむ'}" title="${folded ? '広げる' : '折りたたむ'}"
+          >${icon(folded ? 'chev-right' : 'chev-down', 'icon icon-sm')}</button>
         <select class="secard__level" data-f="level" aria-label="見出しの階層"
           title="見出しの階層">${LEVEL_OPTIONS(level)}</select>
         <input class="secard__title" data-f="title" value="${escapeHtml(s.title)}"
           placeholder="見出し（自由に付けられます）" aria-label="見出し">
         <select class="secard__kind" data-f="kind" aria-label="役割">${KIND_OPTIONS(s.kind)}</select>
         <button type="button" class="iconbtn iconbtn--sm" data-act="menu" aria-label="セクションのメニュー">${icon('more', 'icon icon-sm')}</button>
-      </header>
+      </header>`;
+
+  if (folded) {
+    const peek = s.body.trim().replace(/\s+/g, ' ').slice(0, 90);
+    return `
+    <article class="secard is-folded ${s.enabled === false ? 'is-disabled' : ''}"
+      data-sec="${escapeHtml(s.id)}" data-level="${level}" style="--sec-depth:${level - 1}">
+      ${head}
+      <div class="secard__folded">
+        <span>${peek ? escapeHtml(peek) : '（空）'}</span>
+        <span class="spacer"></span>
+        <span class="tiny">${s.body.length.toLocaleString('ja-JP')} 文字${childCount ? `・配下 ${childCount}` : ''}</span>
+      </div>
+    </article>`;
+  }
+
+  return `
+    <article class="secard ${s.enabled === false ? 'is-disabled' : ''}"
+      data-sec="${escapeHtml(s.id)}" data-level="${level}" style="--sec-depth:${level - 1}">
+      ${head}
       <textarea class="secard__body" data-f="body" rows="2"
         placeholder="ここに書きます" aria-label="本文">${escapeHtml(s.body)}</textarea>
       <footer class="secard__foot">
@@ -210,8 +260,44 @@ function variableBanner() {
     </div>`;
 }
 
+/** 折りたたまれた見出しの配下を隠した、描画するセクションの添字一覧 */
+function visibleIndexes(sections) {
+  const out = [];
+  let hideDeeperThan = null;
+  sections.forEach((s, i) => {
+    const lv = levelOf(s);
+    if (hideDeeperThan !== null) {
+      if (lv > hideDeeperThan) return;
+      hideDeeperThan = null;
+    }
+    out.push(i);
+    if (view.folded.has(s.id)) hideDeeperThan = lv;
+  });
+  return out;
+}
+
+/** すべて折りたためる状態か（1 つでも開いていれば「たたむ」） */
+const anyExpanded = (sections) => sections.some((s) => !view.folded.has(s.id));
+
+function previewText() {
+  const settings = store.state.settings;
+  return renderPrompt(view.draft, view.outputFormat, {
+    includeDisabled: settings.includeDisabledSections,
+    showTitles: settings.showSectionTitlesInPlain,
+    variables: view.applyVars ? (view.draft.variables ?? {}) : {},
+  });
+}
+
+const refreshPreview = debounce(() => {
+  const el = document.querySelector('[data-preview]');
+  if (el) el.textContent = previewText();
+}, 200);
+
 function drawEditor(panel) {
   const p = view.draft;
+  const shown = visibleIndexes(p.sections);
+  const totalChars = p.sections.reduce((n, s) => n + s.body.length, 0);
+  const foldAll = anyExpanded(p.sections);
   panel.innerHTML = `
     <div class="card card--flat" style="margin-bottom:16px">
       <div class="row">
@@ -232,23 +318,48 @@ function drawEditor(panel) {
 
     ${variableBanner()}
 
-    <div class="seceditor" data-sections>
-      ${p.sections.map((s, i) => sectionCard(s, i, p.sections)).join('')}
+    <div class="row editor-toolbar">
+      <button type="button" class="chip" data-act="preview" aria-pressed="${view.showPreview}">
+        ${icon('eye', 'icon icon-sm')} プレビュー</button>
+      <button type="button" class="chip" data-act="foldall">
+        ${icon(foldAll ? 'fold' : 'unfold', 'icon icon-sm')} ${foldAll ? 'すべて折りたたむ' : 'すべて広げる'}</button>
+      <span class="spacer"></span>
+      <span class="tiny muted">${p.sections.length} セクション・${totalChars.toLocaleString('ja-JP')} 文字</span>
     </div>
 
-    ${p.sections.length ? '' : emptyState('notes', 'セクションがありません', '見出しを立てて、好きなだけ重ねていけます。')}
+    <div class="edit-layout ${view.showPreview ? 'is-preview' : ''}">
+      <aside class="edit-preview">
+        <div class="edit-preview__head">
+          ${icon('eye', 'icon icon-sm')}
+          <span>プレビュー</span>
+          <span class="spacer"></span>
+          <select class="select" data-previewfmt aria-label="プレビューの形式">
+            ${FORMATS.map((f) => `<option value="${f.id}" ${f.id === view.outputFormat ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+          </select>
+        </div>
+        <pre class="edit-preview__body" data-preview></pre>
+      </aside>
 
-    <div class="row" style="margin-top:16px">
-      <button type="button" class="btn btn--tonal" data-act="add">${icon('add')} セクションを追加</button>
-      <button type="button" class="btn btn--outlined" data-act="addchild">${icon('indent')} 下の階層に追加</button>
-      <button type="button" class="btn btn--outlined" data-act="insert">${icon('insert')} 部品から挿入</button>
-    </div>
+      <div class="edit-main">
+        <div class="seceditor" data-sections>
+          ${shown.map((i) => sectionCard(p.sections[i], i, p.sections)).join('')}
+        </div>
 
-    <hr class="divider">
+        ${p.sections.length ? '' : emptyState('notes', 'セクションがありません', '見出しを立てて、好きなだけ重ねていけます。')}
 
-    <div class="row">
-      <button type="button" class="btn" data-act="commit">${icon('save')} この内容で版を保存</button>
-      <span class="small muted">${view.revisions.length ? `直近: v${view.revisions[0].version}（${escapeHtml(relTime(view.revisions[0].createdAt))}）` : 'まだ版がありません'}</span>
+        <div class="row" style="margin-top:16px">
+          <button type="button" class="btn btn--tonal" data-act="add">${icon('add')} セクションを追加</button>
+          <button type="button" class="btn btn--outlined" data-act="addchild">${icon('indent')} 下の階層に追加</button>
+          <button type="button" class="btn btn--outlined" data-act="insert">${icon('insert')} 部品から挿入</button>
+        </div>
+
+        <hr class="divider">
+
+        <div class="row">
+          <button type="button" class="btn" data-act="commit">${icon('save')} この内容で版を保存</button>
+          <span class="small muted">${view.revisions.length ? `直近: v${view.revisions[0].version}（${escapeHtml(relTime(view.revisions[0].createdAt))}）` : 'まだ版がありません'}</span>
+        </div>
+      </div>
     </div>`;
 
   bindEditor(panel);
@@ -277,6 +388,8 @@ function bindEditor(panel) {
   const indexOf = (id) => p.sections.findIndex((s) => s.id === id);
 
   panel.querySelectorAll('.secard__body').forEach(autoGrow);
+  const previewEl = panel.querySelector('[data-preview]');
+  if (previewEl) previewEl.textContent = previewText();
 
   panel.querySelector('[data-act="meta"]')?.addEventListener('click', async () => {
     await flushPendingSave();
@@ -285,6 +398,24 @@ function bindEditor(panel) {
   });
 
   panel.querySelector('[data-act="vars"]')?.addEventListener('click', () => editVariablesFlow());
+
+  panel.querySelector('[data-act="preview"]')?.addEventListener('click', () => {
+    view.showPreview = !view.showPreview;
+    persistView();
+    redrawPanel();
+  });
+
+  panel.querySelector('[data-act="foldall"]')?.addEventListener('click', () => {
+    if (anyExpanded(p.sections)) p.sections.forEach((sec) => view.folded.add(sec.id));
+    else view.folded.clear();
+    persistView();
+    redrawPanel();
+  });
+
+  panel.querySelector('[data-previewfmt]')?.addEventListener('change', (e) => {
+    view.outputFormat = e.target.value;
+    panel.querySelector('[data-preview]').textContent = previewText();
+  });
   panel.querySelector('[data-act="add"]')?.addEventListener('click', () => appendSection(false));
   panel.querySelector('[data-act="addchild"]')?.addEventListener('click', () => appendSection(true));
 
@@ -316,6 +447,7 @@ function bindEditor(panel) {
       autoGrow(e.target);
     }
     markDirty();
+    refreshPreview();
   });
 
   list.addEventListener('change', (e) => {
@@ -360,6 +492,12 @@ function bindEditor(panel) {
     if (!s) return;
 
     switch (btn.dataset.act) {
+      case 'fold':
+        if (view.folded.has(id)) view.folded.delete(id);
+        else view.folded.add(id);
+        persistView();
+        redrawPanel();
+        break;
       case 'up': setSections(moveUp(p.sections, idx)); redrawPanel(); break;
       case 'down': setSections(moveDown(p.sections, idx)); redrawPanel(); break;
       case 'indent': setSections(shiftLevel(p.sections, idx, 1)); redrawPanel(); break;
@@ -457,6 +595,8 @@ function openSectionMenu(anchor, sectionId) {
       icon: 'indent',
       onSelect: () => {
         const child = createSection({ level: Math.min(MAX_LEVEL, levelOf(s) + 1) });
+        view.folded.delete(sectionId);
+        persistView();
         setSections([...p.sections.slice(0, idx + 1), child, ...p.sections.slice(idx + 1)]);
         redrawPanel();
         document.querySelector(`[data-sec="${CSS.escape(child.id)}"] [data-f="title"]`)?.focus();
@@ -494,6 +634,8 @@ function openSectionMenu(anchor, sectionId) {
             { submitLabel: '削除する', danger: true });
           if (!ok) return;
         }
+        p.sections.slice(idx, end).forEach((x) => view.folded.delete(x.id));
+        persistView();
         setSections([...p.sections.slice(0, idx), ...p.sections.slice(end)]);
         redrawPanel();
       },

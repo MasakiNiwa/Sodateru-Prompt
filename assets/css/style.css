@@ -307,12 +307,12 @@ button, input, textarea, select { font: inherit; color: inherit; }
   cursor: pointer; text-decoration: none;
   transition: box-shadow var(--motion), background var(--motion), filter var(--motion);
 }
-.btn:hover { box-shadow: var(--e1); filter: brightness(1.06); text-decoration: none; }
-.btn:active { filter: brightness(.96); }
-.btn:disabled { opacity: .38; cursor: not-allowed; box-shadow: none; filter: none; }
+.btn:hover { filter: brightness(1.05); text-decoration: none; }
+.btn:active { filter: brightness(.95); }
+.btn:disabled { opacity: .38; cursor: not-allowed; filter: none; }
 .btn--tonal { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
-.btn--outlined { background: transparent; color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-outline); }
-.btn--outlined:hover { background: color-mix(in srgb, var(--md-primary) 8%, transparent); box-shadow: inset 0 0 0 1px var(--md-outline); }
+.btn--outlined { background: transparent; color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-outline-variant); }
+.btn--outlined:hover { background: color-mix(in srgb, var(--md-primary) 8%, transparent); filter: none; }
 .btn--text { background: transparent; color: var(--md-primary); padding: 0 12px; }
 .btn--text:hover { background: color-mix(in srgb, var(--md-primary) 10%, transparent); box-shadow: none; }
 .btn--danger { background: var(--md-error); color: var(--md-on-error); }
@@ -339,9 +339,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
   border: 0; border-radius: var(--r-l);
   background: var(--md-primary-container); color: var(--md-on-primary-container);
   font-size: .92rem; font-weight: 600; cursor: pointer;
-  box-shadow: var(--e3);
+  box-shadow: var(--e1);
 }
-.fab:hover { filter: brightness(1.05); }
+.fab:hover { filter: brightness(1.04); }
 @media (min-width: 900px) { .fab { bottom: 28px; right: 28px; } }
 
 /* ---------- 5. Surfaces ---------- */
@@ -382,7 +382,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   display: block; width: 100%;
   padding: 10px 14px;
   background: var(--md-surface-container-lowest);
-  border: 1px solid var(--md-outline);
+  border: 1px solid var(--md-outline-variant);
   border-radius: var(--r-s);
   color: var(--md-on-surface);
   transition: border-color var(--motion), box-shadow var(--motion);
@@ -395,10 +395,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
   min-height: 120px; resize: vertical;
   font-family: var(--font-mono); font-size: var(--editor-font-size); line-height: 1.65;
 }
-.select { appearance: none; padding-right: 34px; cursor: pointer;
+/* セレクトの矢印は自前で描く（OS 標準の立体的な矢印を避ける） */
+.select { appearance: none; padding-right: 30px; cursor: pointer;
   background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: right 16px center, right 11px center;
-  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+  background-position: right 14px center, right 10px center;
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
 .searchbar {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 8px 4px 14px;
@@ -416,7 +417,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   position: relative; flex: none; width: 50px; height: 30px;
   border-radius: var(--r-full);
   background: var(--md-surface-variant);
-  box-shadow: inset 0 0 0 2px var(--md-outline);
+  box-shadow: inset 0 0 0 2px var(--md-outline-variant);
   transition: background var(--motion), box-shadow var(--motion);
 }
 .switch__track::after {
@@ -433,36 +434,35 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .switch input:focus-visible + .switch__track { outline: 3px solid var(--md-primary); outline-offset: 2px; }
 
 /* Segmented button */
-.segmented { display: inline-flex; border-radius: var(--r-full); overflow: hidden; box-shadow: inset 0 0 0 1px var(--md-outline); max-width: 100%; }
+.segmented { display: inline-flex; border-radius: var(--r-full); overflow: hidden; box-shadow: inset 0 0 0 1px var(--md-outline-variant); max-width: 100%; }
 .segmented button {
   flex: 1 1 auto; min-height: 38px; padding: 0 14px;
   background: transparent; border: 0; cursor: pointer;
   font-size: .82rem; font-weight: 600; color: var(--md-on-surface-variant);
   white-space: nowrap;
-  border-right: 1px solid var(--md-outline);
+  border-right: 1px solid var(--md-outline-variant);
 }
 .segmented button:last-child { border-right: 0; }
 .segmented button[aria-pressed="true"] { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
 
 /* Chips */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* チップは枠線を持たせず、淡い塗りだけで区別する（平らに見せるため） */
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
-  min-height: 32px; padding: 0 12px;
-  border-radius: var(--r-s);
-  background: transparent; color: var(--md-on-surface-variant);
-  box-shadow: inset 0 0 0 1px var(--md-outline-variant);
+  min-height: 32px; padding: 0 14px;
+  border: 0; border-radius: var(--r-full);
+  background: var(--md-surface-container-high); color: var(--md-on-surface-variant);
   font-size: .8rem; font-weight: 500; cursor: pointer; text-decoration: none;
-  transition: background var(--motion), color var(--motion), box-shadow var(--motion);
+  transition: background var(--motion), color var(--motion);
 }
-.chip:hover { background: color-mix(in srgb, var(--md-on-surface) 8%, transparent); text-decoration: none; }
+.chip:hover { background: var(--md-surface-container-highest); text-decoration: none; }
 .chip[aria-pressed="true"], .chip.is-on {
   background: var(--md-secondary-container); color: var(--md-on-secondary-container);
-  box-shadow: inset 0 0 0 1px transparent;
 }
-.chip--static { cursor: default; }
+.chip--static { cursor: default; background: transparent; box-shadow: inset 0 0 0 1px var(--md-outline-variant); }
 .chip--static:hover { background: transparent; }
-.chip--kind { background: var(--md-tertiary-container); color: var(--md-on-tertiary-container); box-shadow: none; }
+.chip--kind { background: var(--md-surface-container-high); color: var(--md-on-surface-variant); box-shadow: none; }
 .chip__x { display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--r-full); background: none; border: 0; cursor: pointer; color: inherit; }
 .chip__x:hover { background: color-mix(in srgb, currentColor 20%, transparent); }
 
@@ -498,7 +498,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .badge--v { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .badge--archived { background: var(--md-surface-variant); }
-.badge--draft { background: var(--md-tertiary-container); color: var(--md-on-tertiary-container); }
+.badge--draft { background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); }
 
 /* ---------- 8. Tabs ---------- */
 .tabs {
@@ -542,14 +542,20 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-weight: 600; font-size: .95rem;
 }
 .secard__title::placeholder { color: var(--md-on-surface-variant); font-weight: 400; }
-.secard__kind {
-  flex: none; min-height: 30px; padding: 0 26px 0 10px;
-  font-size: .74rem; font-weight: 600; border-radius: var(--r-full);
-  background-color: var(--md-tertiary-container); color: var(--md-on-tertiary-container);
+/* 見出しの階層と役割は「塗りつぶしのボタン」ではなく、文字として置く */
+.secard__kind, .secard__level {
+  flex: none; min-height: 30px; padding: 0 20px 0 8px;
+  font-size: .74rem; font-weight: 600; border-radius: var(--r-s);
+  background-color: transparent; color: var(--md-on-surface-variant);
   border: 0; cursor: pointer; appearance: none;
   background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: right 12px center, right 8px center;
+  background-position: right 9px center, right 5px center;
   background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+  transition: background-color var(--motion);
+}
+.secard__kind:hover, .secard__level:hover,
+.secard__kind:focus-visible, .secard__level:focus-visible {
+  background-color: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
 }
 .secard__body {
   /* 高さは JS が中身に合わせて伸縮させるので、手動リサイズは無効にする */
@@ -704,7 +710,7 @@ html[data-theme="dark"] .snackbar button, :root[data-theme="dark"] .snackbar but
 /* ---------- 15. Misc ---------- */
 .kbd {
   display: inline-block; padding: 1px 7px; margin: 0 2px;
-  border: 1px solid var(--md-outline-variant); border-bottom-width: 2px;
+  border: 1px solid var(--md-outline-variant);
   border-radius: var(--r-xs); background: var(--md-surface-container);
   font-family: var(--font-mono); font-size: .78rem;
 }
@@ -743,25 +749,16 @@ html[data-theme="dark"] .snackbar button, :root[data-theme="dark"] .snackbar but
   border-left: 3px solid var(--md-outline-variant);
   transition: border-color var(--motion), opacity var(--motion), box-shadow var(--motion), margin-left var(--motion);
 }
+/* 階層は 1 色の濃淡で表す（色数を増やさない） */
 .secard[data-level="1"] { border-left-color: var(--md-primary); }
-.secard[data-level="2"] { border-left-color: var(--md-tertiary); }
-.secard[data-level="3"] { border-left-color: var(--md-secondary); }
-.secard[data-level="4"] { border-left-color: var(--md-outline); }
+.secard[data-level="2"] { border-left-color: color-mix(in srgb, var(--md-primary) 55%, var(--md-outline-variant)); }
+.secard[data-level="3"] { border-left-color: color-mix(in srgb, var(--md-primary) 28%, var(--md-outline-variant)); }
+.secard[data-level="4"] { border-left-color: var(--md-outline-variant); }
 
 .secard[data-level="1"] .secard__title { font-size: 1rem; font-weight: 700; }
 .secard[data-level="2"] .secard__title { font-size: .94rem; }
 .secard[data-level="3"] .secard__title,
 .secard[data-level="4"] .secard__title { font-size: .88rem; font-weight: 600; }
-
-.secard__level {
-  flex: none; min-height: 30px; padding: 0 24px 0 10px;
-  font-size: .72rem; font-weight: 700; border-radius: var(--r-full);
-  background-color: var(--md-secondary-container); color: var(--md-on-secondary-container);
-  border: 0; cursor: pointer; appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: right 11px center, right 7px center;
-  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
-}
 
 .secard__drag {
   display: grid; place-items: center;
@@ -800,3 +797,88 @@ code {
   font-family: var(--font-mono); font-size: .88em;
 }
 details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; }
+
+/* ---------- 17. 折りたたみとプレビュー ---------- */
+.secard__fold {
+  display: grid; place-items: center;
+  width: 28px; height: 32px; flex: none;
+  border: 0; border-radius: var(--r-s);
+  background: transparent; color: var(--md-on-surface-variant);
+  cursor: pointer; transition: background var(--motion);
+}
+.secard__fold:hover { background: color-mix(in srgb, var(--md-on-surface) 10%, transparent); }
+
+.secard.is-folded .secard__head { border-bottom: 0; }
+.secard__folded {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 14px 8px;
+  font-size: .8rem; color: var(--md-on-surface-variant);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.secard__folded > span:first-child {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+.editor-toolbar { margin-bottom: 12px; }
+
+.edit-preview { display: none; }
+.edit-layout.is-preview .edit-preview {
+  display: flex; flex-direction: column;
+  margin-bottom: 16px;
+  background: var(--md-surface-container-low);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--r-m);
+  overflow: hidden;
+}
+.edit-preview__head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 14px;
+  background: var(--md-surface-container);
+  border-bottom: 1px solid var(--md-outline-variant);
+  font-size: .8rem; font-weight: 600; color: var(--md-on-surface-variant);
+}
+.edit-preview__head .select {
+  width: auto; min-height: 30px; padding: 0 28px 0 10px;
+  font-size: .74rem; font-weight: 600;
+  background-color: transparent; border-color: transparent;
+}
+.edit-preview__body {
+  margin: 0; padding: 14px;
+  max-height: 42vh; overflow: auto;
+  font-family: var(--font-mono); font-size: .84rem; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word;
+  color: var(--md-on-surface);
+}
+.edit-preview__body:empty::after {
+  content: "まだ書かれていません";
+  color: var(--md-on-surface-variant);
+}
+
+/* 広い画面ではエディタの右に貼り付けて、書きながら全体を見られるようにする */
+@media (min-width: 1100px) {
+  .edit-layout.is-preview {
+    display: grid; align-items: start; gap: 20px;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+  }
+  .edit-layout.is-preview > .edit-main { grid-column: 1; grid-row: 1; }
+  .edit-layout.is-preview > .edit-preview {
+    grid-column: 2; grid-row: 1; margin-bottom: 0;
+    position: sticky; top: 92px;
+    max-height: calc(100vh - 116px);
+  }
+  .edit-layout.is-preview .edit-preview__body { max-height: none; flex: 1 1 auto; }
+}
+
+/* 字下げした .listitem が横にはみ出さないようにする
+   （.listitem は width:100% なので、margin と併用するときは auto に戻す） */
+.list > .listitem[style*="margin-left"] { width: auto; }
+
+/* チップと並ぶ絞り込み用セレクトは、チップと同じ平らな見た目に揃える */
+.select--plain {
+  width: auto; min-height: 32px; padding: 0 30px 0 14px;
+  background-color: var(--md-surface-container-high);
+  border-color: transparent; border-radius: var(--r-full);
+  font-size: .8rem; font-weight: 500; color: var(--md-on-surface-variant);
+}
+.select--plain:hover { background-color: var(--md-surface-container-highest); }
