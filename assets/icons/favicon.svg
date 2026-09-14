@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="育てるプロンプト">
+  <rect width="64" height="64" rx="14" fill="#226a4b"/>
+  <path fill="#a9f2c8" d="M33 52V37.5C33 27.3 24.7 19 14.5 19H11v3.5C11 32.7 19.3 41 29.5 41H31v11h2z"/>
+  <path fill="#8dd5ac" d="M35 34.4h.6c8.8 0 16-7.2 16-16V15h-3.4c-8.8 0-16 7.2-16 16v3.4z"/>
+</svg>

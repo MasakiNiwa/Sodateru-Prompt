@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="育てるプロンプト — プロンプトを育てるシステムノート。プロンプトのメモ・構造化・再利用を実現するローカルファーストな知識管理ツール。">
+<meta name="theme-color" content="#2E6B4F" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101510" media="(prefers-color-scheme: dark)">
+<title>育てるプロンプト</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./assets/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
+<link rel="stylesheet" href="./assets/css/style.css">
+</head>
+<body>
+
+<!-- ===== SVG icon sprite (inlined: no external requests) ===== -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 20v-9.2L12 4l8 6.8V20h-6v-6h-4v6H4z"/></symbol>
+<symbol id="i-sprout" viewBox="0 0 24 24"><path d="M12 21v-6.1C12 10.5 8.6 7 4.3 7H3v1.3C3 12.6 6.5 16 10.8 16H11v5h1zm1-8.2h.2c3.7 0 6.8-3 6.8-6.8V4.7h-1.2c-3.8 0-6.8 3-6.8 6.8v1.3z"/></symbol>
+<symbol id="i-notes" viewBox="0 0 24 24"><path d="M5 3h14a2 2 0 012 2v9l-6 6H5a2 2 0 01-2-2V5a2 2 0 012-2zm2 5v2h10V8H7zm0 4v2h7v-2H7zm7 7.5L18.5 15H14v4.5z"/></symbol>
+<symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M10 3a2.5 2.5 0 015 0v.5h2.5A1.5 1.5 0 0119 5v2.5h.5a2.5 2.5 0 010 5H19V15a1.5 1.5 0 01-1.5 1.5H15v.5a2.5 2.5 0 01-5 0v-.5H6.5A1.5 1.5 0 015 15v-2.5h-.5a2.5 2.5 0 010-5H5V5a1.5 1.5 0 011.5-1.5H10V3z"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7zm7.4-2.2l1.8 1.4-1.9 3.3-2.1-.9a7.7 7.7 0 01-1.7 1l-.3 2.3h-3.8l-.3-2.3a7.7 7.7 0 01-1.7-1l-2.1.9-1.9-3.3 1.8-1.4a7.4 7.4 0 010-2l-1.8-1.4 1.9-3.3 2.1.9a7.7 7.7 0 011.7-1L11.4 4h3.8l.3 2.3c.6.25 1.17.58 1.7 1l2.1-.9 1.9 3.3-1.8 1.4c.07.66.07 1.34 0 2z"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm.1 15.5a1.2 1.2 0 110-2.4 1.2 1.2 0 010 2.4zM14 11c-.7.6-1.1 1-1.1 2h-1.9c0-1.6.6-2.4 1.5-3.1.6-.5.9-.8.9-1.4 0-.8-.6-1.3-1.4-1.3-.9 0-1.5.5-1.7 1.5l-1.8-.5C8.9 6.9 10.2 6 12 6c1.9 0 3.3 1.1 3.3 2.8 0 1-.5 1.6-1.3 2.2z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><path d="M10 3a7 7 0 105.3 11.6l4.6 4.6 1.4-1.4-4.6-4.6A7 7 0 0010 3zm0 2a5 5 0 110 10 5 5 0 010-10z"/></symbol>
+<symbol id="i-add" viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4 6.4 5z"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20v-2z"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z"/></symbol>
+<symbol id="i-delete" viewBox="0 0 24 24"><path d="M7 21a2 2 0 01-2-2V6h14v13a2 2 0 01-2 2H7zM15.5 4H19v2H5V4h3.5l1-1h5l1 1z"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7a1 1 0 000-1.4l-2.3-2.3a1 1 0 00-1.4 0l-1.8 1.8 3.7 3.7 1.8-1.8z"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 00-2 2v14h2V3h12V1zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM12 2 5 9h4v6h6V9h4l-7-7z"/></symbol>
+<symbol id="i-history" viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.9 3.9.1.1L9 12H6a7 7 0 117 7c-1.9 0-3.6-.8-4.8-2l-1.4 1.5A9 9 0 1013 3zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12z"/></symbol>
+<symbol id="i-compare" viewBox="0 0 24 24"><path d="M10 3h2v18h-2v-2H5a2 2 0 01-2-2V7a2 2 0 012-2h5V3zm4 2h5a2 2 0 012 2v10a2 2 0 01-2 2h-5v-2h5V7h-5V5z"/></symbol>
+<symbol id="i-output" viewBox="0 0 24 24"><path d="M14 3v2H5v14h14v-9h2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h9zm7 0v7h-2V6.4l-8.3 8.3-1.4-1.4L17.6 5H14V3h7z"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="m12 17.3-6.2 3.7 1.6-7L2 9.2l7.2-.6L12 2l2.8 6.6 7.2.6-5.4 4.8 1.6 7L12 17.3z"/></symbol>
+<symbol id="i-star-o" viewBox="0 0 24 24"><path d="m12 15.4 3.8 2.3-1-4.3 3.3-2.9-4.4-.4L12 6l-1.7 4.1-4.4.4 3.3 2.9-1 4.3 3.8-2.3zm0 1.9-6.2 3.7 1.6-7L2 9.2l7.2-.6L12 2l2.8 6.6 7.2.6-5.4 4.8 1.6 7L12 17.3z"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></symbol>
+<symbol id="i-tag" viewBox="0 0 24 24"><path d="M21.4 11.6 12.4 2.6A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .55.22 1.05.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.82zM6.5 8A1.5 1.5 0 118 6.5 1.5 1.5 0 016.5 8z"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="m12 8 6 6H6l6-6z"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m12 16-6-6h12l-6 6z"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4zm-5 16a3 3 0 110-6 3 3 0 010 6zm3-10H5V5h10v4z"/></symbol>
+<symbol id="i-light" viewBox="0 0 24 24"><path d="M12 7a5 5 0 100 10 5 5 0 000-10zm0-5 2 3h-4l2-3zm0 20-2-3h4l-2 3zM2 12l3-2v4l-3-2zm20 0-3 2v-4l3 2zM5 5l3.5.5-2 2L5 5zm14 14-3.5-.5 2-2L19 19zM19 5l-1.5 1.5-2-2L19 5zM5 19l1.5-1.5 2 2L5 19z"/></symbol>
+<symbol id="i-dark" viewBox="0 0 24 24"><path d="M12 3a9 9 0 109 9 7 7 0 01-9-9z"/></symbol>
+<symbol id="i-archive" viewBox="0 0 24 24"><path d="M3 3h18v4H3V3zm1 6h16v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9zm5 3v2h6v-2H9z"/></symbol>
+<symbol id="i-github" viewBox="0 0 24 24"><path d="M12 .5a11.5 11.5 0 00-3.6 22.4c.6.1.8-.25.8-.55v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.35-1.3-1.7-1.3-1.7-1.05-.7.1-.7.1-.7 1.15.1 1.75 1.2 1.75 1.2 1.05 1.75 2.7 1.25 3.35.95.1-.75.4-1.25.75-1.55-2.55-.3-5.25-1.3-5.25-5.75 0-1.25.45-2.3 1.2-3.1-.15-.3-.55-1.5.1-3.15 0 0 .95-.3 3.15 1.2a11 11 0 015.75 0c2.2-1.5 3.15-1.2 3.15-1.2.65 1.65.25 2.85.1 3.15.75.8 1.2 1.85 1.2 3.1 0 4.45-2.7 5.45-5.3 5.75.45.35.8 1.05.8 2.1v3.1c0 .3.2.65.8.55A11.5 11.5 0 0012 .5z"/></symbol>
+<symbol id="i-insert" viewBox="0 0 24 24"><path d="M3 5h12v2H3V5zm0 4h12v2H3V9zm0 4h8v2H3v-2zm14-8h2v4h4v2h-4v4h-2v-4h-4v-2h4V5z"/></symbol>
+<symbol id="i-drag" viewBox="0 0 24 24"><path d="M9 4h2v2H9V4zm4 0h2v2h-2V4zM9 9h2v2H9V9zm4 0h2v2h-2V9zm-4 5h2v2H9v-2zm4 0h2v2h-2v-2zm-4 5h2v2H9v-2zm4 0h2v2h-2v-2z"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/></symbol>
+<symbol id="i-restore" viewBox="0 0 24 24"><path d="M13 3a9 9 0 019 9 9 9 0 01-9 9 8.9 8.9 0 01-6.4-2.7l1.4-1.4A7 7 0 1013 5a7 7 0 00-7 7h3l-4 4-4-4h3a9 9 0 019-9z"/></symbol>
+</defs></svg>
+
+<div id="app" class="app">
+  <!-- Top app bar (mobile) / page header -->
+  <header class="appbar" id="appbar"></header>
+
+  <!-- Navigation rail (desktop) -->
+  <nav class="rail" id="rail" aria-label="メインナビゲーション"></nav>
+
+  <main class="main" id="main" tabindex="-1"></main>
+
+  <!-- Bottom navigation (mobile) -->
+  <nav class="bottomnav" id="bottomnav" aria-label="メインナビゲーション"></nav>
+</div>
+
+<div id="fab-slot"></div>
+<div id="dialog-root"></div>
+<div id="snackbar-root" class="snackbar-root" role="status" aria-live="polite"></div>
+
+<script type="module" src="./assets/js/main.js"></script>
+<noscript><p style="padding:24px">このツールを利用するには JavaScript を有効にしてください。</p></noscript>
+</body>
+</html>
