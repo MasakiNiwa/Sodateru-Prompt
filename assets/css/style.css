@@ -552,8 +552,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
   background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
 }
 .secard__body {
-  display: block; width: 100%; min-height: 110px; padding: 12px 14px;
-  background: transparent; border: 0; outline: none; resize: vertical;
+  /* 高さは JS が中身に合わせて伸縮させるので、手動リサイズは無効にする */
+  display: block; width: 100%; min-height: 64px; padding: 12px 14px;
+  background: transparent; border: 0; outline: none; resize: none; overflow: hidden;
   font-family: var(--font-mono); font-size: var(--editor-font-size); line-height: 1.7;
 }
 .secard__foot {
@@ -731,3 +732,71 @@ html[data-theme="dark"] .snackbar button, :root[data-theme="dark"] .snackbar but
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- 16. セクションの階層（見出しを重ねる） ---------- */
+:root { --sec-indent: 16px; }
+@media (min-width: 900px) { :root { --sec-indent: 26px; } }
+
+.secard {
+  /* --sec-depth は 0 始まりの深さ。カードごとにインラインで与えられる */
+  margin-left: calc(var(--sec-depth, 0) * var(--sec-indent));
+  border-left: 3px solid var(--md-outline-variant);
+  transition: border-color var(--motion), opacity var(--motion), box-shadow var(--motion), margin-left var(--motion);
+}
+.secard[data-level="1"] { border-left-color: var(--md-primary); }
+.secard[data-level="2"] { border-left-color: var(--md-tertiary); }
+.secard[data-level="3"] { border-left-color: var(--md-secondary); }
+.secard[data-level="4"] { border-left-color: var(--md-outline); }
+
+.secard[data-level="1"] .secard__title { font-size: 1rem; font-weight: 700; }
+.secard[data-level="2"] .secard__title { font-size: .94rem; }
+.secard[data-level="3"] .secard__title,
+.secard[data-level="4"] .secard__title { font-size: .88rem; font-weight: 600; }
+
+.secard__level {
+  flex: none; min-height: 30px; padding: 0 24px 0 10px;
+  font-size: .72rem; font-weight: 700; border-radius: var(--r-full);
+  background-color: var(--md-secondary-container); color: var(--md-on-secondary-container);
+  border: 0; cursor: pointer; appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 11px center, right 7px center;
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+}
+
+.secard__drag {
+  display: grid; place-items: center;
+  width: 28px; height: 32px; flex: none;
+  border: 0; border-radius: var(--r-s);
+  background: transparent; color: var(--md-on-surface-variant);
+  cursor: grab; touch-action: none;
+}
+.secard__drag:hover { background: color-mix(in srgb, var(--md-on-surface) 10%, transparent); }
+.secard__drag:active { cursor: grabbing; }
+
+.secard__tools { display: inline-flex; gap: 2px; flex: none; }
+
+.secard.is-dragging { opacity: .45; box-shadow: var(--e3); }
+.secard.is-dropbefore { box-shadow: 0 -3px 0 0 var(--md-primary); }
+.secard.is-dropafter { box-shadow: 0 3px 0 0 var(--md-primary); }
+
+/* 狭い画面では階層の字下げを抑え、本文の幅を確保する */
+@media (max-width: 700px) {
+  /* タッチ端末では HTML5 ドラッグが働かないので、つまみは出さない（↑↓ を使う） */
+  .secard__drag { display: none; }
+  /* 見出し行を「階層・見出し・メニュー」／「役割」の 2 段に分ける */
+  .secard__kind { order: 10; }
+  .secard__title { flex: 1 1 50%; }
+  .secard__head { padding: 6px 6px 6px 10px; row-gap: 4px; }
+  .secard__foot { flex-wrap: wrap; row-gap: 2px; padding-left: 10px; }
+  .secard__foot .btn--sm { padding: 0 8px; }
+}
+@media (max-width: 420px) {
+  :root { --sec-indent: 10px; }
+}
+
+code {
+  padding: 1px 5px; border-radius: var(--r-xs);
+  background: var(--md-surface-container-high);
+  font-family: var(--font-mono); font-size: .88em;
+}
+details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; }

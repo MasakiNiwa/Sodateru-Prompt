@@ -6,7 +6,7 @@
  * ・ユーザーデータは IndexedDB にあり、ここでは一切扱わない
  */
 
-const CACHE_VERSION = 'v0.1.0';
+const CACHE_VERSION = 'v0.2.0';
 const CACHE_NAME = `sodateru-prompt-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -22,6 +22,9 @@ const PRECACHE = [
   './assets/js/core/diff.js',
   './assets/js/core/format.js',
   './assets/js/core/models.js',
+  './assets/js/core/outline.js',
+  './assets/js/core/templates.js',
+  './assets/js/core/variables.js',
   './assets/js/core/router.js',
   './assets/js/core/store.js',
   './assets/js/core/theme.js',

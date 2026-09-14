@@ -4,19 +4,23 @@ import * as store from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { renderAppBar, renderFab } from '../ui/shell.js';
 import {
-  toast, contextMenu, promptDialog, confirmDialog, emptyState,
+  toast, contextMenu, promptDialog, confirmDialog, emptyState, dialog,
 } from '../ui/components.js';
 import {
-  escapeHtml, icon, relTime, formatDateTime, debounce, copyText, moveItem, clone,
+  escapeHtml, icon, relTime, formatDateTime, debounce, copyText, clone, download,
 } from '../core/util.js';
 import { createSection, kindLabel, statusLabel } from '../core/models.js';
+import {
+  LEVEL_LABELS, MAX_LEVEL, levelOf, normalizeLevels,
+  moveUp, moveDown, moveSubtree, shiftLevel, subtreeRange, canIndent, canOutdent,
+} from '../core/outline.js';
+import { extractVariables, pruneValues } from '../core/variables.js';
 import { renderSectionsDiff } from '../ui/diff-view.js';
 import { renderPrompt, renderSection, FORMATS, getFormat, exportFileName } from '../core/format.js';
 import {
   exportDialog, editPromptMetaFlow, deletePromptFlow,
-  saveSectionAsSnippetFlow, insertSnippetFlow, KIND_OPTIONS,
+  saveSectionAsSnippetFlow, insertSnippetFlow, KIND_OPTIONS, variableFieldsHtml,
 } from './prompt-actions.js';
-import { download } from '../core/util.js';
 
 const TABS = [
   { id: 'edit', label: '編集', icon: 'edit' },
@@ -40,6 +44,7 @@ function resetView(promptId) {
     diffTouched: false,    // 利用者が比較対象を選び直したか
     outputFormat: store.state.settings.defaultExportFormat ?? 'markdown',
     showUnchanged: false,
+    applyVars: true,
   };
 }
 
@@ -69,6 +74,12 @@ function updateDirtyIndicator() {
 export async function flushPendingSave() {
   scheduleSave.cancel();
   await flushSave();
+}
+
+/** セクション配列を差し替えて保存予約する。レベルの飛びはここでならす */
+function setSections(sections) {
+  view.draft.sections = normalizeLevels(sections);
+  markDirty();
 }
 
 /* ---------------- 描画 ---------------- */
@@ -140,26 +151,63 @@ const redrawPanel = () => {
 
 /* ---------------- タブ: 編集 ---------------- */
 
-function sectionCard(s, i, total) {
+const LEVEL_OPTIONS = (level) => LEVEL_LABELS
+  .map((label, i) => `<option value="${i + 1}" ${i + 1 === level ? 'selected' : ''}>${escapeHtml(label)}</option>`)
+  .join('');
+
+function sectionCard(s, i, sections) {
+  const level = levelOf(s);
+  const childCount = subtreeRange(sections, i)[1] - i - 1;
   return `
-    <article class="secard ${s.enabled === false ? 'is-disabled' : ''}" data-sec="${escapeHtml(s.id)}">
+    <article class="secard ${s.enabled === false ? 'is-disabled' : ''}"
+      data-sec="${escapeHtml(s.id)}" data-level="${level}" style="--sec-depth:${level - 1}">
       <header class="secard__head">
+        <button type="button" class="secard__drag" data-act="drag" draggable="true"
+          aria-label="ドラッグして並び替え" title="ドラッグして並び替え">${icon('drag', 'icon icon-sm')}</button>
+        <select class="secard__level" data-f="level" aria-label="見出しの階層"
+          title="見出しの階層">${LEVEL_OPTIONS(level)}</select>
         <input class="secard__title" data-f="title" value="${escapeHtml(s.title)}"
-          placeholder="セクション名" aria-label="セクション名">
+          placeholder="見出し（自由に付けられます）" aria-label="見出し">
         <select class="secard__kind" data-f="kind" aria-label="役割">${KIND_OPTIONS(s.kind)}</select>
-        <button type="button" class="iconbtn iconbtn--sm" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="上へ">${icon('up', 'icon icon-sm')}</button>
-        <button type="button" class="iconbtn iconbtn--sm" data-act="down" ${i === total - 1 ? 'disabled' : ''} aria-label="下へ">${icon('down', 'icon icon-sm')}</button>
         <button type="button" class="iconbtn iconbtn--sm" data-act="menu" aria-label="セクションのメニュー">${icon('more', 'icon icon-sm')}</button>
       </header>
-      <textarea class="secard__body" data-f="body" rows="5"
+      <textarea class="secard__body" data-f="body" rows="2"
         placeholder="ここに書きます" aria-label="本文">${escapeHtml(s.body)}</textarea>
       <footer class="secard__foot">
         <span data-chars>${s.body.length.toLocaleString('ja-JP')} 文字</span>
+        ${childCount ? `<span class="tiny muted">配下 ${childCount}</span>` : ''}
         <span class="spacer"></span>
+        <span class="secard__tools">
+          <button type="button" class="iconbtn iconbtn--sm" data-act="outdent"
+            ${canOutdent(sections, i) ? '' : 'disabled'} aria-label="階層を上げる" title="階層を上げる (Ctrl+[)">${icon('outdent', 'icon icon-sm')}</button>
+          <button type="button" class="iconbtn iconbtn--sm" data-act="indent"
+            ${canIndent(sections, i) ? '' : 'disabled'} aria-label="階層を下げる" title="階層を下げる (Ctrl+])">${icon('indent', 'icon icon-sm')}</button>
+          <button type="button" class="iconbtn iconbtn--sm" data-act="up" aria-label="上へ">${icon('up', 'icon icon-sm')}</button>
+          <button type="button" class="iconbtn iconbtn--sm" data-act="down" aria-label="下へ">${icon('down', 'icon icon-sm')}</button>
+        </span>
         <button type="button" class="btn btn--text btn--sm" data-act="copy">${icon('copy', 'icon icon-sm')} コピー</button>
         <button type="button" class="btn btn--text btn--sm" data-act="snippet">${icon('puzzle', 'icon icon-sm')} 部品に</button>
       </footer>
     </article>`;
+}
+
+function variableBanner() {
+  const names = extractVariables(view.draft.sections);
+  if (!names.length) return '';
+  const values = view.draft.variables ?? {};
+  const filled = names.filter((n) => values[n]).length;
+  return `
+    <div class="card card--flat" style="margin-bottom:16px">
+      <div class="row">
+        <b class="small">${icon('tag', 'icon icon-sm')} 変数 ${names.length} 個</b>
+        <span class="spacer"></span>
+        <span class="tiny muted">${filled} / ${names.length} 個に値あり</span>
+        <button type="button" class="btn btn--text btn--sm" data-act="vars">値を入力</button>
+      </div>
+      <div class="chips" style="margin-top:8px">
+        ${names.map((n) => `<span class="chip chip--static tiny" style="min-height:26px">${escapeHtml(`{{${n}}}`)}${values[n] ? ` <span class="muted">= ${escapeHtml(values[n].slice(0, 18))}</span>` : ''}</span>`).join('')}
+      </div>
+    </div>`;
 }
 
 function drawEditor(panel) {
@@ -182,14 +230,17 @@ function drawEditor(panel) {
       </div>
     </div>
 
+    ${variableBanner()}
+
     <div class="seceditor" data-sections>
-      ${p.sections.map((s, i) => sectionCard(s, i, p.sections.length)).join('')}
+      ${p.sections.map((s, i) => sectionCard(s, i, p.sections)).join('')}
     </div>
 
-    ${p.sections.length ? '' : emptyState('notes', 'セクションがありません', '役割・前提・指示などに分けて書くと、あとから部分的に育てられます。')}
+    ${p.sections.length ? '' : emptyState('notes', 'セクションがありません', '見出しを立てて、好きなだけ重ねていけます。')}
 
     <div class="row" style="margin-top:16px">
       <button type="button" class="btn btn--tonal" data-act="add">${icon('add')} セクションを追加</button>
+      <button type="button" class="btn btn--outlined" data-act="addchild">${icon('indent')} 下の階層に追加</button>
       <button type="button" class="btn btn--outlined" data-act="insert">${icon('insert')} 部品から挿入</button>
     </div>
 
@@ -203,9 +254,29 @@ function drawEditor(panel) {
   bindEditor(panel);
 }
 
+/** 末尾にセクションを足す。階層は直前のセクションを基準にする */
+function appendSection(asChild) {
+  const p = view.draft;
+  const last = p.sections[p.sections.length - 1];
+  const level = last ? Math.min(MAX_LEVEL, levelOf(last) + (asChild ? 1 : 0)) : 1;
+  const section = createSection({ level });
+  setSections([...p.sections, section]);
+  redrawPanel();
+  document.querySelector(`[data-sec="${CSS.escape(section.id)}"] [data-f="title"]`)?.focus();
+}
+
+/** 本文の高さを中身に合わせる（短いセクションを多数並べても見通せるように） */
+function autoGrow(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${Math.max(el.scrollHeight, 64)}px`;
+}
+
 function bindEditor(panel) {
   const p = view.draft;
-  const findSection = (id) => p.sections.find((s) => s.id === id);
+  const indexOf = (id) => p.sections.findIndex((s) => s.id === id);
+
+  panel.querySelectorAll('.secard__body').forEach(autoGrow);
 
   panel.querySelector('[data-act="meta"]')?.addEventListener('click', async () => {
     await flushPendingSave();
@@ -213,19 +284,15 @@ function bindEditor(panel) {
     if (saved) { view.draft = clone(saved); drawShell(document.getElementById('main')); }
   });
 
-  panel.querySelector('[data-act="add"]')?.addEventListener('click', () => {
-    p.sections = [...p.sections, createSection()];
-    markDirty();
-    redrawPanel();
-    const cards = document.querySelectorAll('.secard');
-    cards[cards.length - 1]?.querySelector('[data-f="title"]')?.focus();
-  });
+  panel.querySelector('[data-act="vars"]')?.addEventListener('click', () => editVariablesFlow());
+  panel.querySelector('[data-act="add"]')?.addEventListener('click', () => appendSection(false));
+  panel.querySelector('[data-act="addchild"]')?.addEventListener('click', () => appendSection(true));
 
   panel.querySelector('[data-act="insert"]')?.addEventListener('click', async () => {
     const section = await insertSnippetFlow();
     if (!section) return;
-    p.sections = [...p.sections, section];
-    markDirty();
+    const last = p.sections[p.sections.length - 1];
+    setSections([...p.sections, { ...section, level: last ? levelOf(last) : 1 }]);
     await flushPendingSave();
     redrawPanel();
     toast('部品を挿入しました');
@@ -240,21 +307,47 @@ function bindEditor(panel) {
   list.addEventListener('input', (e) => {
     const card = e.target.closest('[data-sec]');
     const field = e.target.dataset.f;
-    if (!card || !field) return;
-    const s = findSection(card.dataset.sec);
+    if (!card || !field || field === 'level' || field === 'kind') return;
+    const s = p.sections[indexOf(card.dataset.sec)];
     if (!s) return;
     s[field] = e.target.value;
     if (field === 'body') {
       card.querySelector('[data-chars]').textContent = `${e.target.value.length.toLocaleString('ja-JP')} 文字`;
+      autoGrow(e.target);
     }
     markDirty();
   });
 
   list.addEventListener('change', (e) => {
-    if (e.target.dataset.f !== 'kind') return;
+    const field = e.target.dataset.f;
+    if (field !== 'kind' && field !== 'level') return;
     const card = e.target.closest('[data-sec]');
-    const s = findSection(card.dataset.sec);
-    if (s) { s.kind = e.target.value; markDirty(); }
+    const i = indexOf(card.dataset.sec);
+    if (i < 0) return;
+    if (field === 'kind') {
+      p.sections[i] = { ...p.sections[i], kind: e.target.value };
+      markDirty();
+      return;
+    }
+    // 階層は「今の値との差」をサブツリーごとに 1 段ずつ適用する
+    const delta = Number(e.target.value) - levelOf(p.sections[i]);
+    let next = p.sections;
+    for (let n = 0; n < Math.abs(delta); n++) next = shiftLevel(next, i, Math.sign(delta));
+    setSections(next);
+    redrawPanel();
+  });
+
+  // 階層の増減はショートカットでも行える
+  list.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== ']' && e.key !== '[')) return;
+    const card = e.target.closest('[data-sec]');
+    if (!card) return;
+    e.preventDefault();
+    const id = card.dataset.sec;
+    const field = e.target.dataset.f ?? 'title';
+    setSections(shiftLevel(p.sections, indexOf(id), e.key === ']' ? 1 : -1));
+    redrawPanel();
+    document.querySelector(`[data-sec="${CSS.escape(id)}"] [data-f="${field}"]`)?.focus();
   });
 
   list.addEventListener('click', async (e) => {
@@ -262,19 +355,15 @@ function bindEditor(panel) {
     if (!btn) return;
     const card = btn.closest('[data-sec]');
     const id = card.dataset.sec;
-    const idx = p.sections.findIndex((s) => s.id === id);
+    const idx = indexOf(id);
     const s = p.sections[idx];
     if (!s) return;
 
     switch (btn.dataset.act) {
-      case 'up':
-        p.sections = moveItem(p.sections, idx, idx - 1);
-        markDirty(); redrawPanel();
-        break;
-      case 'down':
-        p.sections = moveItem(p.sections, idx, idx + 1);
-        markDirty(); redrawPanel();
-        break;
+      case 'up': setSections(moveUp(p.sections, idx)); redrawPanel(); break;
+      case 'down': setSections(moveDown(p.sections, idx)); redrawPanel(); break;
+      case 'indent': setSections(shiftLevel(p.sections, idx, 1)); redrawPanel(); break;
+      case 'outdent': setSections(shiftLevel(p.sections, idx, -1)); redrawPanel(); break;
       case 'copy':
         toast(await copyText(renderSection(s, view.outputFormat)) ? 'セクションをコピーしました' : 'コピーできませんでした');
         break;
@@ -288,6 +377,70 @@ function bindEditor(panel) {
         break;
     }
   });
+
+  bindDragAndDrop(list);
+}
+
+/**
+ * ドラッグ＆ドロップ並び替え（配下ごと動く）。
+ * タッチ端末では発火しないため、↑↓ ボタンを常に併置してある。
+ */
+function bindDragAndDrop(list) {
+  let dragId = null;
+
+  const clearMarks = () => list.querySelectorAll('.is-dropbefore, .is-dropafter')
+    .forEach((el) => el.classList.remove('is-dropbefore', 'is-dropafter'));
+
+  // ドラッグできるのは「つまみ」だけ。カード自体は draggable にしないので、
+  // 本文のテキスト選択を邪魔しない
+  list.addEventListener('dragstart', (e) => {
+    const handle = e.target.closest('[data-act="drag"]');
+    const card = e.target.closest('[data-sec]');
+    if (!handle || !card) { e.preventDefault(); return; }
+    dragId = card.dataset.sec;
+    card.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragId);
+    e.dataTransfer.setDragImage?.(card, 20, 20);
+  });
+
+  list.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const over = e.target.closest('[data-sec]');
+    clearMarks();
+    if (!over || over.dataset.sec === dragId) return;
+    const rect = over.getBoundingClientRect();
+    over.classList.add(e.clientY < rect.top + rect.height / 2 ? 'is-dropbefore' : 'is-dropafter');
+  });
+
+  list.addEventListener('drop', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    const over = e.target.closest('[data-sec]');
+    const sections = view.draft.sections;
+    const from = sections.findIndex((s) => s.id === dragId);
+    const droppedOn = dragId;
+    clearMarks();
+    dragId = null;
+    if (!over || over.dataset.sec === droppedOn || from < 0) return;
+
+    const overIndex = sections.findIndex((s) => s.id === over.dataset.sec);
+    const rect = over.getBoundingClientRect();
+    const after = e.clientY >= rect.top + rect.height / 2;
+    // 後ろへ落とすときは、落とし先の配下をまたいだ位置に入れる
+    const to = after ? subtreeRange(sections, overIndex)[1] : overIndex;
+
+    setSections(moveSubtree(sections, from, to));
+    redrawPanel();
+  });
+
+  list.addEventListener('dragend', () => {
+    clearMarks();
+    list.querySelectorAll('.is-dragging').forEach((el) => el.classList.remove('is-dragging'));
+    dragId = null;
+  });
 }
 
 function openSectionMenu(anchor, sectionId) {
@@ -295,42 +448,86 @@ function openSectionMenu(anchor, sectionId) {
   const idx = p.sections.findIndex((s) => s.id === sectionId);
   const s = p.sections[idx];
   if (!s) return;
+  const [, end] = subtreeRange(p.sections, idx);
+  const childCount = end - idx - 1;
 
   contextMenu(anchor, [
     {
-      label: s.enabled === false ? '出力に含める' : '出力から外す',
-      icon: s.enabled === false ? 'check' : 'close',
-      onSelect: () => { s.enabled = s.enabled === false; markDirty(); redrawPanel(); },
+      label: 'この下に子セクションを追加',
+      icon: 'indent',
+      onSelect: () => {
+        const child = createSection({ level: Math.min(MAX_LEVEL, levelOf(s) + 1) });
+        setSections([...p.sections.slice(0, idx + 1), child, ...p.sections.slice(idx + 1)]);
+        redrawPanel();
+        document.querySelector(`[data-sec="${CSS.escape(child.id)}"] [data-f="title"]`)?.focus();
+      },
     },
     {
-      label: '複製',
+      label: s.enabled === false ? '出力に含める' : '出力から外す',
+      icon: s.enabled === false ? 'check' : 'close',
+      onSelect: () => {
+        p.sections[idx] = { ...s, enabled: s.enabled === false };
+        markDirty();
+        redrawPanel();
+      },
+    },
+    {
+      label: childCount ? `複製（配下 ${childCount} 件ごと）` : '複製',
       icon: 'copy',
       onSelect: () => {
-        const copy = createSection({ title: s.title, body: s.body, kind: s.kind, enabled: s.enabled });
-        p.sections = [...p.sections.slice(0, idx + 1), copy, ...p.sections.slice(idx + 1)];
-        markDirty(); redrawPanel();
+        const copies = p.sections.slice(idx, end)
+          .map((x) => createSection({ title: x.title, body: x.body, kind: x.kind, level: x.level, enabled: x.enabled }));
+        setSections([...p.sections.slice(0, end), ...copies, ...p.sections.slice(end)]);
+        redrawPanel();
       },
     },
     { label: '再利用候補に登録', icon: 'puzzle', onSelect: () => saveSectionAsSnippetFlow(s, view.promptId) },
     { divider: true },
     {
-      label: '削除',
+      label: childCount ? `削除（配下 ${childCount} 件ごと）` : '削除',
       icon: 'delete',
       danger: true,
       onSelect: async () => {
         if (store.state.settings.confirmDelete) {
           const ok = await confirmDialog('セクションを削除',
-            `「${s.title || kindLabel(s.kind)}」を削除します。`, { submitLabel: '削除する', danger: true });
+            `「${s.title || kindLabel(s.kind)}」を削除します。${childCount ? `\n配下の ${childCount} 件もいっしょに削除されます。` : ''}`,
+            { submitLabel: '削除する', danger: true });
           if (!ok) return;
         }
-        p.sections = p.sections.filter((x) => x.id !== sectionId);
-        markDirty(); redrawPanel();
+        setSections([...p.sections.slice(0, idx), ...p.sections.slice(end)]);
+        redrawPanel();
       },
     },
   ]);
 }
 
-/** 現在の作業コピーを版として確定 */
+/* ---------------- 変数 ---------------- */
+
+async function editVariablesFlow() {
+  const names = extractVariables(view.draft.sections);
+  if (!names.length) return;
+  const values = await dialog({
+    title: '変数の値',
+    submitLabel: '保存',
+    body: `<p class="small muted">出力するときに <code>{{変数名}}</code> の場所へ差し込まれます。
+      空のままにすると、その変数は穴のまま残ります。</p>
+      ${variableFieldsHtml(names, view.draft.variables ?? {})}`,
+    onSubmit(root) {
+      const out = {};
+      root.querySelectorAll('[data-var]').forEach((el) => { out[el.dataset.var] = el.value; });
+      return out;
+    },
+  });
+  if (!values) return;
+  view.draft.variables = pruneValues(values, names);
+  markDirty();
+  await flushPendingSave();
+  redrawPanel();
+  toast('変数の値を保存しました');
+}
+
+/* ---------------- 版の確定 ---------------- */
+
 async function commitFlow() {
   await flushPendingSave();
   const message = await promptDialog('版を保存', {
@@ -343,6 +540,7 @@ async function commitFlow() {
   const rev = await store.commitRevision(view.promptId, message);
   view.draft = clone(store.getPrompt(view.promptId));
   view.revisions = await store.listRevisions(view.promptId);
+  view.diffTouched = false;
   toast(`v${rev.version} として保存しました`);
   drawShell(document.getElementById('main'));
 }
@@ -461,6 +659,17 @@ function openRevisionMenu(anchor, revId) {
     },
     { label: '作業コピーに復元', icon: 'restore', onSelect: () => restoreFlow(revId) },
     {
+      label: '作業コピーと比べる',
+      icon: 'compare',
+      onSelect: () => {
+        view.diffLeft = revId;
+        view.diffRight = 'working';
+        view.diffTouched = true;
+        view.tab = 'diff';
+        drawShell(document.getElementById('main'));
+      },
+    },
+    {
       label: 'テキストで保存',
       icon: 'download',
       onSelect: () => {
@@ -483,6 +692,7 @@ function openRevisionMenu(anchor, revId) {
         if (!ok) return;
         await store.deleteRevision(revId, view.promptId);
         view.revisions = await store.listRevisions(view.promptId);
+        view.diffTouched = false;
         redrawPanel();
         toast('版を削除しました');
       },
@@ -533,6 +743,9 @@ function drawDiff(panel) {
     view.diffLeft = view.revisions[view.revisions.length > 1 ? 1 : 0].id;
   }
 
+  // 比較先が作業コピーのときだけ、セクション単位で取り込める
+  const restorable = view.diffRight === 'working';
+
   panel.innerHTML = `
     <div class="card card--flat" style="margin-bottom:16px">
       <div class="row">
@@ -549,6 +762,7 @@ function drawDiff(panel) {
         <button type="button" class="chip" data-unchanged aria-pressed="${view.showUnchanged}">変更のないセクションも表示</button>
         <button type="button" class="btn btn--text btn--sm" data-swap>入れ替え</button>
       </div>
+      ${restorable ? '<p class="tiny muted" style="margin:10px 0 0">各ブロックの「戻す」で、そのセクションだけを比較元の状態に戻せます。</p>' : ''}
     </div>
     <div class="stack" data-diffout></div>`;
 
@@ -557,6 +771,7 @@ function drawDiff(panel) {
     <p class="small muted">${escapeHtml(sideLabel(view.diffLeft))} → ${escapeHtml(sideLabel(view.diffRight))}</p>
     ${renderSectionsDiff(sideSections(view.diffLeft), sideSections(view.diffRight), {
     showUnchanged: view.showUnchanged,
+    restorable,
   })}`;
 
   panel.querySelector('[data-left]').addEventListener('change', (e) => {
@@ -565,13 +780,46 @@ function drawDiff(panel) {
   panel.querySelector('[data-right]').addEventListener('change', (e) => {
     view.diffRight = e.target.value; view.diffTouched = true; drawDiff(panel);
   });
-  panel.querySelector('[data-unchanged]').addEventListener('click', () => { view.showUnchanged = !view.showUnchanged; drawDiff(panel); });
+  panel.querySelector('[data-unchanged]').addEventListener('click', () => {
+    view.showUnchanged = !view.showUnchanged; drawDiff(panel);
+  });
   panel.querySelector('[data-swap]').addEventListener('click', () => {
     if (view.diffRight === 'working') { toast('作業コピーは比較元にできません'); return; }
     [view.diffLeft, view.diffRight] = [view.diffRight, view.diffLeft];
     view.diffTouched = true;
     drawDiff(panel);
   });
+
+  out.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-restore-sec]');
+    if (btn) restoreSection(btn.dataset.restoreSec, panel);
+  });
+}
+
+/** 1 つのセクションだけを比較元の状態へ戻す */
+async function restoreSection(sectionId, panel) {
+  const source = sideSections(view.diffLeft).find((s) => s.id === sectionId);
+  const sections = view.draft.sections;
+  const at = sections.findIndex((s) => s.id === sectionId);
+
+  if (!source) {
+    // 比較元に無い＝この版より後に足したセクション。取り除くのが「戻す」になる
+    if (at < 0) return;
+    const [start, end] = subtreeRange(sections, at);
+    setSections([...sections.slice(0, start), ...sections.slice(end)]);
+    toast('このセクションを取り除きました');
+  } else if (at >= 0) {
+    const next = sections.slice();
+    next[at] = { ...clone(source), level: levelOf(sections[at]) };
+    setSections(next);
+    toast(`「${source.title || '無題'}」を ${sideLabel(view.diffLeft)} の内容に戻しました`);
+  } else {
+    // 比較元にあって作業コピーに無い＝削除済み。末尾に戻す
+    setSections([...sections, clone(source)]);
+    toast(`「${source.title || '無題'}」を戻しました`);
+  }
+  await flushPendingSave();
+  drawDiff(panel);
 }
 
 /* ---------------- タブ: 出力 ---------------- */
@@ -579,10 +827,12 @@ function drawDiff(panel) {
 function drawOutput(panel) {
   const settings = store.state.settings;
   const source = view.draft;
+  const varNames = extractVariables(source.sections);
 
   const text = () => renderPrompt(source, view.outputFormat, {
     includeDisabled: settings.includeDisabledSections,
     showTitles: settings.showSectionTitlesInPlain,
+    variables: view.applyVars ? (source.variables ?? {}) : {},
   });
 
   panel.innerHTML = `
@@ -591,6 +841,23 @@ function drawOutput(panel) {
         ${FORMATS.map((f) => `<button type="button" data-v="${f.id}" aria-pressed="${f.id === view.outputFormat}">${escapeHtml(f.label)}</button>`).join('')}
       </div>
     </div>
+
+    ${varNames.length ? `
+      <div class="card card--flat" style="margin-bottom:12px">
+        <div class="row">
+          <b class="small">${icon('tag', 'icon icon-sm')} 変数</b>
+          <span class="spacer"></span>
+          <label class="switch" style="padding:0">
+            <input type="checkbox" data-applyvars ${view.applyVars ? 'checked' : ''}>
+            <span class="switch__track"></span>
+            <span class="small">値を差し込む</span>
+          </label>
+        </div>
+        <div style="margin-top:12px" data-varfields>
+          ${variableFieldsHtml(varNames, source.variables ?? {})}
+        </div>
+      </div>` : ''}
+
     <pre class="output-pre" data-out></pre>
     <div class="row" style="margin-top:12px">
       <button type="button" class="btn btn--tonal" data-act="copy">${icon('copy')} コピー</button>
@@ -617,6 +884,23 @@ function drawOutput(panel) {
     panel.querySelectorAll('[data-fmt] button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === view.outputFormat)));
     draw();
   });
+
+  panel.querySelector('[data-applyvars]')?.addEventListener('change', (e) => {
+    view.applyVars = e.target.checked;
+    draw();
+  });
+
+  panel.querySelector('[data-varfields]')?.addEventListener('input', (e) => {
+    const field = e.target.closest('[data-var]');
+    if (!field) return;
+    source.variables = pruneValues(
+      { ...(source.variables ?? {}), [field.dataset.var]: field.value },
+      varNames,
+    );
+    markDirty();
+    draw();
+  });
+
   panel.querySelector('[data-act="copy"]').addEventListener('click', async () => {
     toast(await copyText(outEl.textContent) ? 'コピーしました' : 'コピーできませんでした');
   });
@@ -639,12 +923,14 @@ async function onAppBarAction(id, el) {
   }
   if (id !== 'more') return;
 
+  const hasVars = extractVariables(view.draft.sections).length > 0;
   contextMenu(el, [
     { label: '情報を編集', icon: 'edit', onSelect: async () => {
       await flushPendingSave();
       const saved = await editPromptMetaFlow(view.promptId);
       if (saved) { view.draft = clone(saved); drawShell(document.getElementById('main')); }
     } },
+    ...(hasVars ? [{ label: '変数の値を入力', icon: 'tag', onSelect: () => editVariablesFlow() }] : []),
     { label: 'この内容で版を保存', icon: 'save', onSelect: () => commitFlow() },
     { label: '出力・コピー', icon: 'output', onSelect: async () => { await flushPendingSave(); exportDialog(view.draft); } },
     { divider: true },

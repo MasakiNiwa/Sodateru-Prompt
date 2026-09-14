@@ -3,7 +3,7 @@
 export const APP = {
   name: '育てるプロンプト',
   tagline: 'プロンプトを育てるシステムノート',
-  version: '0.1.0',
+  version: '0.2.0',
   releasedAt: '2026-09-14',
   repository: 'https://github.com/MasakiNiwa/Sodateru-Prompt',
   issues: 'https://github.com/MasakiNiwa/Sodateru-Prompt/issues',
@@ -12,6 +12,20 @@ export const APP = {
 
 /** ヘルプの「更新履歴」に表示する。新しい版を上に足していく */
 export const CHANGELOG = [
+  {
+    version: '0.2.0',
+    date: '2026-09-14',
+    notes: [
+      'セクションに見出しの階層（大見出し〜細目の 4 段）を追加。見出しのように好きなだけ重ねられます',
+      '階層は Markdown の見出し深さ・XML タグの入れ子・プレーンテキストの行頭記号に反映されます',
+      'セクションをドラッグ＆ドロップで並び替え（配下ごと移動。スマホは ↑↓ ボタン）',
+      '階層の上げ下げショートカット（Ctrl+[ / Ctrl+]）',
+      '変数プレースホルダ {{変数名}} と、出力時の値の差し込み',
+      '新規作成時にひな形を選べるように（基本形 / 見出しを重ねる / 分析タスク / 文章の推敲）',
+      '差分からセクション 1 つだけを過去の版の状態に戻せるように',
+      '差分で見出し・階層・役割の変化も表示',
+    ],
+  },
   {
     version: '0.1.0',
     date: '2026-09-14',

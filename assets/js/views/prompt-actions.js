@@ -6,6 +6,8 @@ import { dialog, confirmDialog, toast } from '../ui/components.js';
 import { escapeHtml, parseTags, copyText, download, icon } from '../core/util.js';
 import { FORMATS, renderPrompt, exportFileName, getFormat } from '../core/format.js';
 import { SECTION_KINDS, createSection } from '../core/models.js';
+import { TEMPLATES, getTemplate } from '../core/templates.js';
+import { extractVariables, pruneValues } from '../core/variables.js';
 
 const folderOptions = (selected) => [
   `<option value="" ${!selected ? 'selected' : ''}>未分類</option>`,
@@ -26,19 +28,36 @@ export async function newPromptFlow(defaults = {}) {
         <span class="field__label">目的・概要（任意）</span>
         <input class="input" data-f="summary" placeholder="何のための取り組みか">
       </label>
-      <label class="field">
-        <span class="field__label">フォルダ</span>
-        <select class="select" data-f="folder">${folderOptions(defaults.folderId ?? null)}</select>
-      </label>
-      <label class="field">
-        <span class="field__label">タグ（カンマ区切り・任意）</span>
-        <input class="input" data-f="tags" placeholder="要約, 業務">
-      </label>`,
+      <div class="field">
+        <span class="field__label">ひな形</span>
+        <select class="select" data-f="template">
+          ${TEMPLATES.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('')}
+        </select>
+        <p class="tiny muted" data-tpl-desc style="margin:6px 0 0"></p>
+      </div>
+      <div class="row">
+        <label class="field" style="flex:1 1 160px">
+          <span class="field__label">フォルダ</span>
+          <select class="select" data-f="folder">${folderOptions(defaults.folderId ?? null)}</select>
+        </label>
+        <label class="field" style="flex:1 1 160px">
+          <span class="field__label">タグ（カンマ区切り・任意）</span>
+          <input class="input" data-f="tags" placeholder="要約, 業務">
+        </label>
+      </div>`,
+    onMount(root) {
+      const select = root.querySelector('[data-f="template"]');
+      const desc = root.querySelector('[data-tpl-desc]');
+      const sync = () => { desc.textContent = getTemplate(select.value).description; };
+      select.addEventListener('change', sync);
+      sync();
+    },
     onSubmit(root) {
       const get = (f) => root.querySelector(`[data-f="${f}"]`).value;
       return {
         title: get('title').trim(),
         summary: get('summary').trim(),
+        templateId: get('template'),
         folderId: get('folder') || null,
         tags: parseTags(get('tags')),
       };
@@ -46,12 +65,28 @@ export async function newPromptFlow(defaults = {}) {
   });
   if (!result) return null;
 
+  const { templateId, ...meta } = result;
   const prompt = await store.addPrompt({
-    ...result,
-    title: result.title || '無題のプロンプト',
+    ...meta,
+    title: meta.title || '無題のプロンプト',
+    sections: getTemplate(templateId).sections.map((s) => createSection(s)),
   });
   navigate(`/prompts/${prompt.id}`);
   return prompt;
+}
+
+/**
+ * 変数の値を入力するフォームの HTML。
+ * 入力要素には data-var="変数名" が付く。
+ */
+export function variableFieldsHtml(names, values = {}) {
+  if (!names.length) return '<p class="small muted">この内容に変数はありません。</p>';
+  return names.map((name) => `
+    <label class="field" style="margin-bottom:10px">
+      <span class="field__label">${escapeHtml(`{{${name}}}`)}</span>
+      <textarea class="textarea" data-var="${escapeHtml(name)}" rows="2"
+        style="min-height:52px" placeholder="値を入力（空なら穴のまま）">${escapeHtml(values[name] ?? '')}</textarea>
+    </label>`).join('');
 }
 
 /** プロンプトのメタ情報（タイトル・概要・フォルダ・タグ・状態）を編集 */
@@ -130,6 +165,8 @@ export async function exportDialog(source, opts = {}) {
   const settings = store.state.settings;
   let format = settings.defaultExportFormat ?? 'markdown';
   let includeDisabled = Boolean(settings.includeDisabledSections);
+  const varNames = extractVariables(source.sections ?? []);
+  const varValues = pruneValues({ ...(source.variables ?? {}) }, varNames);
 
   await dialog({
     title: `出力${opts.titleSuffix ?? ''}`,
@@ -146,6 +183,10 @@ export async function exportDialog(source, opts = {}) {
         <span class="switch__track"></span>
         <span class="small">無効なセクションも含める</span>
       </label>
+      ${varNames.length ? `<details style="margin-bottom:12px">
+        <summary class="small" style="cursor:pointer">変数 ${varNames.length} 個に値を差し込む</summary>
+        <div style="margin-top:10px" data-varfields>${variableFieldsHtml(varNames, varValues)}</div>
+      </details>` : ''}
       <pre class="output-pre" data-out></pre>
       <div class="row" style="margin-top:12px">
         <button type="button" class="btn btn--tonal" data-act="copy">${icon('copy')} コピー</button>
@@ -160,6 +201,7 @@ export async function exportDialog(source, opts = {}) {
         const text = renderPrompt(source, format, {
           includeDisabled,
           showTitles: settings.showSectionTitlesInPlain,
+          variables: varValues,
         });
         out.textContent = text;
         countEl.textContent = `${text.length.toLocaleString('ja-JP')} 文字`;
@@ -173,6 +215,12 @@ export async function exportDialog(source, opts = {}) {
       });
       root.querySelector('[data-f="disabled"]').addEventListener('change', (e) => {
         includeDisabled = e.target.checked;
+        draw();
+      });
+      root.querySelector('[data-varfields]')?.addEventListener('input', (e) => {
+        const field = e.target.closest('[data-var]');
+        if (!field) return;
+        varValues[field.dataset.var] = field.value;
         draw();
       });
       root.querySelector('[data-act="copy"]').addEventListener('click', async () => {
