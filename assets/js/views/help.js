@@ -4,10 +4,13 @@ import { renderAppBar, renderFab } from '../ui/shell.js';
 import { escapeHtml, icon } from '../core/util.js';
 import { APP, CHANGELOG } from '../core/app-info.js';
 import { SECTION_KINDS } from '../core/models.js';
+import { LEVEL_LABELS, LEVEL_MARKERS } from '../core/outline.js';
 import { FORMATS } from '../core/format.js';
 
 const SHORTCUTS = [
   { keys: ['Ctrl', 'K'], desc: '検索パレットを開く（Mac は ⌘ + K）' },
+  { keys: ['Ctrl', ']'], desc: 'セクションの階層を 1 段下げる（編集中のセクション）' },
+  { keys: ['Ctrl', '['], desc: 'セクションの階層を 1 段上げる（編集中のセクション）' },
   { keys: ['Ctrl', 'S'], desc: '編集中の内容をすぐ保存する' },
   { keys: ['Esc'], desc: 'ダイアログ・メニューを閉じる' },
   { keys: ['Ctrl', 'Enter'], desc: 'ダイアログの内容を確定する' },
@@ -23,6 +26,21 @@ const FAQ = [
     q: 'ブラウザのデータを消したら、どうなりますか？',
     a: 'すべて失われます。定期的に「設定 → データ → バックアップを書き出す」で JSON ファイルを保存しておいてください。'
       + 'そのファイルは同じ画面の「バックアップを読み込む」で戻せます。',
+  },
+  {
+    q: 'セクションはいくつでも足せますか？',
+    a: '上限はありません。「セクションを追加」で同じ階層に、「下の階層に追加」で 1 段深い位置に足せます。'
+      + '見出しの文言も自由に付けられるので、役割の分類にとらわれず、好きな見出しを好きなだけ重ねられます。',
+  },
+  {
+    q: '階層は出力にどう反映されますか？',
+    a: 'Markdown では見出しの深さ（##, ###, ####…）に、XML タグではタグの入れ子に、'
+      + 'プレーンテキストでは行頭記号に反映されます。「本文のみ」では見出しは出ません。',
+  },
+  {
+    q: '変数プレースホルダとは？',
+    a: '本文に {{変数名}} と書いておくと、出力するときにその場所へ値を差し込めます。'
+      + '値はプロンプトごとに保存されるので、毎回入れ直す必要はありません。空のままなら穴の形のまま出力されます。',
   },
   {
     q: '「版を保存」と自動保存の違いは？',
@@ -65,7 +83,7 @@ export function render(main) {
       <h2>${icon('sprout')} はじめかた</h2>
       <ol class="help-list">
         <li><b>プロンプトを作る</b> — 右下のボタンから、取り組みの単位でプロンプトを作ります。</li>
-        <li><b>セクションに分ける</b> — 「役割」「前提」「指示」「制約」などに分けて書きます。あとから一部分だけを差し替えられます。</li>
+        <li><b>セクションに分ける</b> — 見出しを立てて書きます。自由に名前を付けられ、見出しの下に見出しを重ねることもできます。</li>
         <li><b>版を保存する</b> — 試した区切りで「この内容で版を保存」。変更メモを添えると後から追いやすくなります。</li>
         <li><b>差分を見る</b> — 差分タブで任意の 2 つの版を比べられます。作業コピーとの比較もできます。</li>
         <li><b>部品にする</b> — よく効いたセクションは「部品に」で再利用候補へ。別のプロンプトに挿入できます。</li>
@@ -79,6 +97,27 @@ export function render(main) {
       <div class="chips">
         ${SECTION_KINDS.map((k) => `<span class="chip chip--kind chip--static">${escapeHtml(k.label)}<span class="tiny" style="opacity:.7">&lt;${escapeHtml(k.tag)}&gt;</span></span>`).join('')}
       </div>
+    </section>
+
+    <section class="section-block">
+      <h2>${icon('indent')} セクションの階層</h2>
+      <p class="small muted">
+        セクションは見出しのように重ねられます。階層を変えると、配下のセクションもいっしょに動きます。
+        深くできるのは「直前のセクションの 1 段下」までです。
+      </p>
+      <div class="list">
+        ${LEVEL_LABELS.map((label, i) => `<div class="listitem" style="cursor:default;margin-left:${i * 18}px">
+          <span class="listitem__body">
+            <span class="listitem__title">${escapeHtml(label)}</span>
+            <span class="listitem__meta">
+              <span>Markdown: ${escapeHtml('#'.repeat(i + 2))}</span>
+              <span>プレーンテキスト: ${escapeHtml(LEVEL_MARKERS[i])}</span>
+            </span>
+          </span></div>`).join('')}
+      </div>
+      <p class="small muted" style="margin-top:12px">
+        つまみ（${escapeHtml('⠿')}）をドラッグすると並び替えられます。スマートフォンでは ↑ ↓ ボタンをお使いください。
+      </p>
     </section>
 
     <section class="section-block">

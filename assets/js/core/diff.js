@@ -166,11 +166,13 @@ export function diffSections(oldSections = [], newSections = []) {
     if (!prev) {
       result.push({ status: 'added', title: s.title || '(無題のセクション)', next: s });
     } else {
+      const levelChanged = (prev.level ?? 1) !== (s.level ?? 1);
       const changed = prev.body !== s.body || prev.title !== s.title
-        || prev.kind !== s.kind || prev.enabled !== s.enabled;
+        || prev.kind !== s.kind || prev.enabled !== s.enabled || levelChanged;
       result.push({
         status: changed ? 'modified' : 'same',
         title: s.title || prev.title || '(無題のセクション)',
+        levelChanged,
         old: prev,
         next: s,
       });

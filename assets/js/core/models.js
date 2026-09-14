@@ -1,6 +1,7 @@
 /** エンティティの定義・生成・正規化 */
 
 import { uid, now, clone } from './util.js';
+import { clampLevel, normalizeLevels } from './outline.js';
 
 /** セクションの役割。出力形式ごとの見出し／タグ名にも使われる */
 export const SECTION_KINDS = [
@@ -31,6 +32,7 @@ export function createSection(patch = {}) {
     title: '',
     body: '',
     kind: 'text',
+    level: 1,
     enabled: true,
     ...patch,
   };
@@ -45,6 +47,7 @@ export function createPrompt(patch = {}) {
     summary: '',
     tags: [],
     sections: [createSection({ title: '指示', kind: 'instruction' })],
+    variables: {},
     starred: false,
     status: 'draft',
     revisionCount: 0,
@@ -95,6 +98,7 @@ export function createRevision(prompt, message, version) {
     summary: prompt.summary,
     tags: clone(prompt.tags ?? []),
     sections: clone(prompt.sections ?? []),
+    variables: clone(prompt.variables ?? {}),
     createdAt: now(),
   };
 }
@@ -120,18 +124,36 @@ export function normalizeSettings(saved) {
   return out;
 }
 
+/** 変数の値は「文字列 → 文字列」の辞書に揃える */
+export function sanitizeVariables(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof key === 'string' && key && value !== undefined && value !== null) {
+      out[key] = String(value);
+    }
+  }
+  return out;
+}
+
+/** 外部データのセクション 1 件を安全な形へ整える */
+export function sanitizeSection(s) {
+  return {
+    id: typeof s?.id === 'string' && s.id ? s.id : uid(),
+    title: String(s?.title ?? ''),
+    body: String(s?.body ?? ''),
+    kind: KIND_MAP[s?.kind] ? s.kind : 'text',
+    level: clampLevel(s?.level),
+    enabled: s?.enabled !== false,
+  };
+}
+
 /** 外部データ（インポート）を安全な形へ整える */
 export function sanitizePrompt(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const base = createPrompt();
   const sections = Array.isArray(raw.sections) && raw.sections.length
-    ? raw.sections.map((s) => ({
-      id: typeof s?.id === 'string' ? s.id : uid(),
-      title: String(s?.title ?? ''),
-      body: String(s?.body ?? ''),
-      kind: KIND_MAP[s?.kind] ? s.kind : 'text',
-      enabled: s?.enabled !== false,
-    }))
+    ? normalizeLevels(raw.sections.map(sanitizeSection))
     : base.sections;
   return {
     ...base,
@@ -144,6 +166,7 @@ export function sanitizePrompt(raw) {
     starred: Boolean(raw.starred),
     status: PROMPT_STATUSES.some((s) => s.id === raw.status) ? raw.status : 'draft',
     revisionCount: Number.isFinite(raw.revisionCount) ? raw.revisionCount : 0,
+    variables: sanitizeVariables(raw.variables),
     folderId: typeof raw.folderId === 'string' ? raw.folderId : null,
     createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : base.createdAt,
     updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : base.updatedAt,
@@ -189,15 +212,8 @@ export function sanitizeRevision(raw) {
     title: String(raw.title ?? ''),
     summary: String(raw.summary ?? ''),
     tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
-    sections: Array.isArray(raw.sections)
-      ? raw.sections.map((s) => ({
-        id: typeof s?.id === 'string' ? s.id : uid(),
-        title: String(s?.title ?? ''),
-        body: String(s?.body ?? ''),
-        kind: KIND_MAP[s?.kind] ? s.kind : 'text',
-        enabled: s?.enabled !== false,
-      }))
-      : [],
+    sections: Array.isArray(raw.sections) ? normalizeLevels(raw.sections.map(sanitizeSection)) : [],
+    variables: sanitizeVariables(raw.variables),
     createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : now(),
   };
 }
