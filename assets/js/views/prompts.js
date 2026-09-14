@@ -78,7 +78,7 @@ function filterBar() {
     </div>` : ''}
 
     <div class="row" style="margin-bottom:14px">
-      <select class="select" data-sort style="width:auto;min-width:130px">
+      <select class="select select--plain" data-sort aria-label="並び順">
         ${SORTS.map((s) => `<option value="${s.id}" ${ui.sort === s.id ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
       </select>
       <button type="button" class="chip" data-archived aria-pressed="${ui.showArchived}">${icon('archive', 'icon icon-sm')} アーカイブも表示</button>

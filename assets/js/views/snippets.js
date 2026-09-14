@@ -135,7 +135,7 @@ export function render(main) {
       </div>` : ''}
 
       <div class="row" style="margin-bottom:14px">
-        <select class="select" data-sort style="width:auto;min-width:140px">
+        <select class="select select--plain" data-sort aria-label="並び順">
           ${SORTS.map((s) => `<option value="${s.id}" ${ui.sort === s.id ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
         </select>
       </div>
