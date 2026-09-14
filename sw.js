@@ -6,7 +6,7 @@
  * ・ユーザーデータは IndexedDB にあり、ここでは一切扱わない
  */
 
-const CACHE_VERSION = 'v0.3.0';
+const CACHE_VERSION = 'v0.4.0';
 const CACHE_NAME = `sodateru-prompt-${CACHE_VERSION}`;
 
 const PRECACHE = [
