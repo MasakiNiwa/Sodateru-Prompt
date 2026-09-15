@@ -50,7 +50,10 @@ export function createPrompt(patch = {}) {
     variables: {},
     starred: false,
     status: 'draft',
+    // revisionCount = いま残っている版の数 / lastVersion = 最後に発行した番号。
+    // 版を削除しても番号は再利用しないので、この 2 つは一致しないことがある。
     revisionCount: 0,
+    lastVersion: 0,
     createdAt: t,
     updatedAt: t,
     ...patch,
@@ -165,7 +168,11 @@ export function sanitizePrompt(raw) {
     sections,
     starred: Boolean(raw.starred),
     status: PROMPT_STATUSES.some((s) => s.id === raw.status) ? raw.status : 'draft',
-    revisionCount: Number.isFinite(raw.revisionCount) ? raw.revisionCount : 0,
+    revisionCount: Number.isFinite(raw.revisionCount) ? Math.max(0, raw.revisionCount) : 0,
+    // v0.5 以前は lastVersion を持たない。その頃の revisionCount は採番カウンタだった
+    lastVersion: Number.isFinite(raw.lastVersion)
+      ? Math.max(0, raw.lastVersion)
+      : (Number.isFinite(raw.revisionCount) ? Math.max(0, raw.revisionCount) : 0),
     variables: sanitizeVariables(raw.variables),
     folderId: typeof raw.folderId === 'string' ? raw.folderId : null,
     createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : base.createdAt,

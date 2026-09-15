@@ -109,6 +109,25 @@ export const deleteByIndex = (store, index, query) => run(store, 'readwrite', (s
 
 export const count = (store) => run(store, 'readonly', (s) => wrap(s.count()));
 
+/**
+ * 版の確定（履歴の追加 + プロンプト側の採番更新）を 1 トランザクションで行う。
+ * 別々に書くと、途中で失敗したときに番号と履歴がずれる。
+ */
+export function commitRevisionTx(revision, prompt) {
+  return run([STORES.revisions, STORES.prompts], 'readwrite', (revs, prompts) => Promise.all([
+    wrap(revs.put(revision)),
+    wrap(prompts.put(prompt)),
+  ]));
+}
+
+/** 版を消し、同じトランザクションでプロンプト側の残数も直す */
+export function deleteRevisionTx(revId, prompt) {
+  return run([STORES.revisions, STORES.prompts], 'readwrite', (revs, prompts) => Promise.all([
+    wrap(revs.delete(revId)),
+    wrap(prompts.put(prompt)),
+  ]));
+}
+
 /** 複数ストアへの一括書き込みを 1 トランザクションで行う（バックアップ復元用） */
 export function bulkWrite(payload, { replace = false } = {}) {
   const names = Object.keys(payload);

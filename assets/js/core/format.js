@@ -142,7 +142,8 @@ export function renderPrompt(prompt, formatId = 'markdown', opts = {}) {
 export function exportFileName(prompt, formatId) {
   const fmt = getFormat(formatId);
   const base = safeFileName(prompt.title || '無題のプロンプト');
-  const v = prompt.revisionCount ? `_v${prompt.revisionCount}` : '';
+  const last = prompt.lastVersion ?? prompt.revisionCount ?? 0;
+  const v = last ? `_v${last}` : '';
   return `${base}${v}.${fmt.ext}`;
 }
 

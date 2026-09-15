@@ -16,6 +16,7 @@ import {
 } from '../core/outline.js';
 import { extractVariables, pruneValues } from '../core/variables.js';
 import { renderSectionsDiff } from '../ui/diff-view.js';
+import { diffMeta } from '../core/diff.js';
 import { renderPrompt, renderSection, FORMATS, getFormat, exportFileName } from '../core/format.js';
 import {
   exportDialog, editPromptMetaFlow, deletePromptFlow,
@@ -71,6 +72,7 @@ function resetView(promptId) {
     tab: 'edit',
     draft: clone(store.getPrompt(promptId)),
     dirty: false,
+    saveState: 'idle',   // idle / pending / saving / error / conflict
     revisions: [],
     diffLeft: null,        // revision id
     diffRight: 'working',  // 'working' または revision id
@@ -84,28 +86,78 @@ function resetView(promptId) {
     mode: 'write',          // 'write' か 'structure'。作業の区切りなので覚えない
     selectedId: null,
   };
+  // まだ何も書かれていないなら、読む画面ではなく「書ける状態」で開く
+  const sections = view.draft.sections ?? [];
+  if (sections.length && sections.every((s) => !s.body.trim())) {
+    view.selectedId = sections[0].id;
+    view.focusOnRender = true;
+  }
 }
 
 /* ---------------- 保存 ---------------- */
 
-const flushSave = async () => {
+/*
+ * 自動保存は「書き込みが終わってから保存済みにする」。
+ * 先に印を消してしまうと、失敗したときにその変更が二度と保存されない。
+ */
+let inflight = null;
+
+async function flushSave() {
   if (!view?.dirty) return;
-  view.dirty = false;
-  await store.savePrompt(view.draft);
+  if (inflight) { await inflight; return; }
+
+  view.saveState = 'saving';
   updateDirtyIndicator();
-};
+  const attempt = { ...view.draft };
+
+  inflight = (async () => {
+    try {
+      // 他のタブが先に書いていたら上書きしない
+      const saved = await store.savePrompt(attempt, { expectUnchanged: true });
+      // 保存中に増えた変更は dirty のまま残す
+      view.draft.updatedAt = saved.updatedAt;
+      if (store.sameSnapshot(attempt, view.draft)) view.dirty = false;
+      view.saveState = 'idle';
+    } catch (err) {
+      view.saveState = err?.code === 'conflict' ? 'conflict' : 'error';
+      console.error('[save]', err);
+      if (err?.code === 'conflict') {
+        toast('ほかのタブの変更を上書きしないよう、保存を止めました', {
+          action: '再読み込み', onAction: () => window.location.reload(), duration: 8000,
+        });
+      }
+    } finally {
+      inflight = null;
+      updateDirtyIndicator();
+    }
+  })();
+  await inflight;
+}
 
 const scheduleSave = debounce(() => { flushSave(); }, 700);
 
 function markDirty() {
   view.dirty = true;
+  if (view.saveState !== 'saving') view.saveState = 'pending';
   updateDirtyIndicator();
   scheduleSave();
 }
 
+/** 保存の状態と、版として確定していない変更があるかを分けて見せる */
 function updateDirtyIndicator() {
   const el = document.querySelector('[data-dirty]');
-  if (el) el.textContent = view.dirty ? '保存中…' : '保存済み';
+  if (!el) return;
+  const latest = view.revisions[0];
+  const uncommitted = latest ? !store.sameSnapshot(latest, view.draft) : true;
+  const label = {
+    saving: '保存中…',
+    error: '保存できませんでした',
+    conflict: '保存を止めました',
+  }[view.saveState] ?? (view.dirty ? '保存待ち' : 'この端末に自動保存済み');
+  el.textContent = uncommitted && !view.dirty && view.saveState === 'idle'
+    ? `${label}・未確定の変更あり`
+    : label;
+  el.classList.toggle('is-error', view.saveState === 'error' || view.saveState === 'conflict');
 }
 
 /** 画面を離れる前に確実に書き込む */
@@ -119,6 +171,28 @@ function setSections(sections) {
   view.draft.sections = normalizeLevels(sections);
   markDirty();
 }
+
+/**
+ * ほかのタブでこのプロンプトが変わったときの受け取り。
+ * 編集中なら勝手に入れ替えず知らせるだけにし、書きかけを失わせない。
+ */
+store.subscribe(async (reason) => {
+  if (reason !== 'external' || !view) return;
+  const latest = store.getPrompt(view.promptId);
+  if (!latest) return;
+  if (latest.updatedAt <= (view.draft.updatedAt ?? 0)) return;
+
+  if (view.dirty || view.saveState === 'saving') {
+    toast('ほかのタブでこのプロンプトが更新されました', {
+      action: '読み込み直す', onAction: () => window.location.reload(), duration: 8000,
+    });
+    return;
+  }
+  view.draft = clone(latest);
+  view.revisions = await store.listRevisions(view.promptId);
+  const main = document.getElementById('main');
+  if (main && view.tab) drawShell(main);
+});
 
 /* ---------------- 描画 ---------------- */
 
@@ -142,12 +216,23 @@ export async function render(main, ctx) {
   drawShell(main);
 }
 
+/**
+ * 「最新 v3（2 件）」のように、番号と残っている件数を分けて見せる。
+ * 版を消しても番号は再利用しないので、この 2 つは一致しないことがある。
+ */
+function versionLabel(p) {
+  const last = p.lastVersion ?? p.revisionCount ?? 0;
+  const count = p.revisionCount ?? 0;
+  if (!last) return '版なし';
+  return count === last ? `v${last}` : `最新 v${last}（${count} 件）`;
+}
+
 function drawShell(main) {
   const p = view.draft;
   renderFab(null);
   renderAppBar({
     title: p.title || '無題のプロンプト',
-    subtitle: `${store.folderName(p.folderId)}・${p.revisionCount ? `v${p.revisionCount}` : '版なし'}・${statusLabel(p.status)}`,
+    subtitle: `${store.folderName(p.folderId)}・${versionLabel(p)}・${statusLabel(p.status)}`,
     back: '/prompts',
     actions: [
       { id: 'star', icon: p.starred ? 'star' : 'star-o', label: 'お気に入り', active: p.starred },
@@ -250,6 +335,28 @@ const refreshPreview = debounce(() => {
   if (el) el.textContent = previewText();
 }, 200);
 
+/**
+ * 書いている最中に古びる表示（合計文字数・変数の一覧）を作り直す。
+ * 画面全体は描き直さないので、入力中のフォーカスは保たれる。
+ */
+const refreshLiveCounts = debounce(() => {
+  const p = view.draft;
+  const total = p.sections.reduce((n, sec) => n + sec.body.length, 0);
+  const summary = document.querySelector('[data-editor-count]');
+  if (summary) summary.textContent = `${p.sections.length} セクション・${total.toLocaleString('ja-JP')} 文字`;
+
+  const varsEl = document.querySelector('[data-editor-vars]');
+  if (varsEl) {
+    const next = variableBanner();
+    if (varsEl.outerHTML !== next) {
+      // 変数が増減したときだけ差し替える（毎打鍵で入れ替えるとちらつく）
+      varsEl.outerHTML = next || '<div class="row editor-vars" data-editor-vars hidden></div>';
+      document.querySelector('[data-act="vars"]')
+        ?.addEventListener('click', () => editVariablesFlow());
+    }
+  }
+}, 300);
+
 /* ---------------- 読む姿（未選択のセクション） ---------------- */
 
 /**
@@ -290,17 +397,18 @@ function sectionTools(s, i, sections) {
     <div class="secard__tools">
       <select class="secard__level" data-f="level" aria-label="見出しの階層" title="見出しの階層">${LEVEL_OPTIONS(level)}</select>
       <select class="secard__kind" data-f="kind" aria-label="役割" title="役割">${KIND_OPTIONS(s.kind)}</select>
-      <span class="secard__tools-sep"></span>
-      <button type="button" class="iconbtn iconbtn--sm" data-act="outdent"
-        ${canOutdent(sections, i) ? '' : 'disabled'} aria-label="階層を上げる" title="階層を上げる (Ctrl+[)">${icon('outdent', 'icon icon-sm')}</button>
-      <button type="button" class="iconbtn iconbtn--sm" data-act="indent"
-        ${canIndent(sections, i) ? '' : 'disabled'} aria-label="階層を下げる" title="階層を下げる (Ctrl+])">${icon('indent', 'icon icon-sm')}</button>
-      <button type="button" class="iconbtn iconbtn--sm" data-act="up" aria-label="上へ移動" title="上へ移動">${icon('up', 'icon icon-sm')}</button>
-      <button type="button" class="iconbtn iconbtn--sm" data-act="down" aria-label="下へ移動" title="下へ移動">${icon('down', 'icon icon-sm')}</button>
+      ${view.mode === 'structure' ? `
+        <span class="secard__tools-sep"></span>
+        <button type="button" class="iconbtn iconbtn--sm" data-act="outdent"
+          ${canOutdent(sections, i) ? '' : 'disabled'} aria-label="階層を上げる" title="階層を上げる (Ctrl+[)">${icon('outdent', 'icon icon-sm')}</button>
+        <button type="button" class="iconbtn iconbtn--sm" data-act="indent"
+          ${canIndent(sections, i) ? '' : 'disabled'} aria-label="階層を下げる" title="階層を下げる (Ctrl+])">${icon('indent', 'icon icon-sm')}</button>
+        <button type="button" class="iconbtn iconbtn--sm" data-act="up" aria-label="上へ移動" title="上へ移動">${icon('up', 'icon icon-sm')}</button>
+        <button type="button" class="iconbtn iconbtn--sm" data-act="down" aria-label="下へ移動" title="下へ移動">${icon('down', 'icon icon-sm')}</button>` : ''}
       <span class="spacer"></span>
       <span class="tiny muted" data-chars>${s.body.length.toLocaleString('ja-JP')} 文字</span>
-      <button type="button" class="btn btn--text btn--sm" data-act="focus">${icon('expand', 'icon icon-sm')} 全文</button>
-      <button type="button" class="btn btn--text btn--sm" data-act="done">${icon('check', 'icon icon-sm')} 閉じる</button>
+      <button type="button" class="btn btn--text btn--sm" data-act="focus">${icon('expand', 'icon icon-sm')} 広く編集</button>
+      ${view.mode === 'structure' ? '' : '<button type="button" class="btn btn--text btn--sm" data-act="done">' + icon('check', 'icon icon-sm') + ' 閉じる</button>'}
     </div>`;
 }
 
@@ -347,7 +455,7 @@ function sectionCard(s, i, sections) {
     <article class="${classes}" data-sec="${escapeHtml(s.id)}" data-level="${level}">
       ${head}
       <textarea class="secard__body" data-f="body" rows="2"
-        placeholder="ここに書きます" aria-label="本文">${escapeHtml(s.body)}</textarea>
+        placeholder="ここに書く。書いてあるプロンプトを貼り付けてもかまいません。" aria-label="本文">${escapeHtml(s.body)}</textarea>
       ${sectionTools(s, i, sections)}
     </article>`;
 }
@@ -492,10 +600,11 @@ function drawEditor(panel) {
         >${icon('notes', 'icon icon-sm')} 目次</button>
       <button type="button" class="chip" data-act="preview" aria-pressed="${view.showPreview}"
         >${icon('eye', 'icon icon-sm')} プレビュー</button>
+      <button type="button" class="chip" data-act="copyall">${icon('copy', 'icon icon-sm')} 全文をコピー</button>
       ${structure ? `<button type="button" class="chip" data-act="foldall"
         >${icon(foldAll ? 'fold' : 'unfold', 'icon icon-sm')} ${foldAll ? 'すべてたたむ' : 'すべて広げる'}</button>` : ''}
       <span class="spacer"></span>
-      <span class="tiny muted">${p.sections.length} セクション・${totalChars.toLocaleString('ja-JP')} 文字</span>
+      <span class="tiny muted" data-editor-count>${p.sections.length} セクション・${totalChars.toLocaleString('ja-JP')} 文字</span>
     </div>
 
     ${structure ? '<p class="tiny muted editor-hint">構造整理モードです。並べ替えと階層の変更に集中できます。本文を書くときは「書く」に戻してください。</p>' : ''}
@@ -541,11 +650,11 @@ function drawEditor(panel) {
 
 function variableBanner() {
   const names = extractVariables(view.draft.sections);
-  if (!names.length) return '';
+  if (!names.length) return '<div class="row editor-vars" data-editor-vars hidden></div>';
   const values = view.draft.variables ?? {};
   const filled = names.filter((n) => values[n]).length;
   return `
-    <div class="row editor-vars">
+    <div class="row editor-vars" data-editor-vars>
       <span class="tiny muted">${icon('tag', 'icon icon-sm')} 変数 ${filled} / ${names.length}</span>
       ${names.slice(0, 6).map((n) => `<span class="chip chip--static tiny" style="min-height:24px">${escapeHtml(`{{${n}}}`)}</span>`).join('')}
       <span class="spacer"></span>
@@ -614,6 +723,12 @@ function bindEditor(panel) {
   const previewEl = panel.querySelector('[data-preview]');
   if (previewEl) previewEl.textContent = previewText();
 
+  // 作りたてのプロンプトは、開いた瞬間から書き始められるようにする
+  if (view.focusOnRender) {
+    view.focusOnRender = false;
+    panel.querySelector('.secard__body')?.focus();
+  }
+
   panel.querySelector('[data-act="meta"]')?.addEventListener('click', async () => {
     await flushPendingSave();
     const saved = await editPromptMetaFlow(view.promptId);
@@ -666,6 +781,10 @@ function bindEditor(panel) {
     await flushPendingSave();
     redrawPanel();
     toast('部品を挿入しました');
+  });
+
+  panel.querySelector('[data-act="copyall"]')?.addEventListener('click', async () => {
+    toast(await copyText(previewText()) ? '全文をコピーしました' : 'コピーできませんでした');
   });
 
   panel.querySelector('[data-act="commit"]')?.addEventListener('click', () => commitFlow());
@@ -763,6 +882,7 @@ function bindEditor(panel) {
     }
     markDirty();
     refreshPreview();
+    refreshLiveCounts();
   });
 
   list.addEventListener('change', (e) => {
@@ -1129,9 +1249,11 @@ const revOptions = (selected, { includeWorking = true } = {}) => [
   ...view.revisions.map((r) => `<option value="${escapeHtml(r.id)}" ${selected === r.id ? 'selected' : ''}>v${r.version}　${escapeHtml(r.message || formatDateTime(r.createdAt))}</option>`),
 ].join('');
 
-const sideSections = (key) => (key === 'working'
-  ? view.draft.sections
-  : (view.revisions.find((r) => r.id === key)?.sections ?? []));
+const sideSnapshot = (key) => (key === 'working'
+  ? view.draft
+  : (view.revisions.find((r) => r.id === key) ?? {}));
+
+const sideSections = (key) => sideSnapshot(key).sections ?? [];
 
 const sideLabel = (key) => (key === 'working'
   ? '作業コピー'
@@ -1194,6 +1316,8 @@ function drawDiff(panel) {
     ${renderSectionsDiff(sideSections(view.diffLeft), sideSections(view.diffRight), {
     showUnchanged: view.showUnchanged,
     restorable,
+    // 本文以外（タイトル・概要・タグ・変数）の変化も同じ画面に出す
+    meta: diffMeta(store.snapshotOf(sideSnapshot(view.diffLeft)), store.snapshotOf(sideSnapshot(view.diffRight))),
   })}`;
 
   panel.querySelector('[data-left]').addEventListener('change', (e) => {
@@ -1218,9 +1342,13 @@ function drawDiff(panel) {
   });
 }
 
-/** 1 つのセクションだけを比較元の状態へ戻す */
+/**
+ * 1 つのセクションだけを比較元の状態へ戻す。
+ * 本文だけでなく見出し・役割・階層も戻し、消えていたものは元の並びの位置へ挿し直す。
+ */
 async function restoreSection(sectionId, panel) {
-  const source = sideSections(view.diffLeft).find((s) => s.id === sectionId);
+  const from = sideSections(view.diffLeft);
+  const source = from.find((s) => s.id === sectionId);
   const sections = view.draft.sections;
   const at = sections.findIndex((s) => s.id === sectionId);
 
@@ -1232,13 +1360,20 @@ async function restoreSection(sectionId, panel) {
     toast('このセクションを取り除きました');
   } else if (at >= 0) {
     const next = sections.slice();
-    next[at] = { ...clone(source), level: levelOf(sections[at]) };
+    next[at] = clone(source);          // 階層・役割・出力可否もまとめて戻す
     setSections(next);
-    toast(`「${source.title || '無題'}」を ${sideLabel(view.diffLeft)} の内容に戻しました`);
+    toast(`「${sectionLabel(source)}」を ${sideLabel(view.diffLeft)} の内容に戻しました`);
   } else {
-    // 比較元にあって作業コピーに無い＝削除済み。末尾に戻す
-    setSections([...sections, clone(source)]);
-    toast(`「${source.title || '無題'}」を戻しました`);
+    // 比較元にあって作業コピーに無い＝削除済み。
+    // 比較元での「直前に来ていたセクション」を手がかりに、元の位置へ挿し直す
+    const sourceIndex = from.findIndex((s) => s.id === sectionId);
+    let insertAt = sections.length;
+    for (let i = sourceIndex - 1; i >= 0; i--) {
+      const anchor = sections.findIndex((s) => s.id === from[i].id);
+      if (anchor >= 0) { insertAt = subtreeRange(sections, anchor)[1]; break; }
+    }
+    setSections([...sections.slice(0, insertAt), clone(source), ...sections.slice(insertAt)]);
+    toast(`「${sectionLabel(source)}」を元の位置に戻しました`);
   }
   await flushPendingSave();
   drawDiff(panel);

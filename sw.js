@@ -6,7 +6,7 @@
  * ・ユーザーデータは IndexedDB にあり、ここでは一切扱わない
  */
 
-const CACHE_VERSION = 'v0.5.0';
+const CACHE_VERSION = 'v0.6.0';
 const CACHE_NAME = `sodateru-prompt-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -45,8 +45,10 @@ const PRECACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    // 1 つでも失敗すると install ごと失敗するため、個別に握りつぶす
-    await Promise.all(PRECACHE.map((url) => cache.add(url).catch(() => {})));
+    // 1 つでも取れなければ install ごと失敗させる。
+    // 欠けたまま新しいキャッシュへ切り替えると、オフライン時に
+    // 一部のモジュールだけ読めずアプリが起動しなくなる（古い方を使い続ける方が安全）。
+    await cache.addAll(PRECACHE);
     await self.skipWaiting();
   })());
 });

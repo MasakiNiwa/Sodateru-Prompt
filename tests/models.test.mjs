@@ -43,3 +43,21 @@ test('設定は既定値とマージし、知らないキーは捨てる', () =>
   assert.equal(s.unknown, undefined);
   assert.equal(s.density, M.DEFAULT_SETTINGS.density);
 });
+
+test('v0.5 以前のプロンプトは revisionCount を採番カウンタとして引き継ぐ', () => {
+  const p = M.sanitizePrompt({ id: 'P', revisionCount: 7 });
+  assert.equal(p.lastVersion, 7, '次の版番号が巻き戻ると一意制約に衝突する');
+  assert.equal(p.revisionCount, 7);
+});
+
+test('lastVersion があればそちらを優先する', () => {
+  const p = M.sanitizePrompt({ id: 'P', revisionCount: 2, lastVersion: 9 });
+  assert.equal(p.lastVersion, 9);
+  assert.equal(p.revisionCount, 2);
+});
+
+test('負の値は 0 に丸める', () => {
+  const p = M.sanitizePrompt({ id: 'P', revisionCount: -3, lastVersion: -1 });
+  assert.equal(p.revisionCount, 0);
+  assert.equal(p.lastVersion, 0);
+});

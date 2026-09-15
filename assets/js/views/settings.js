@@ -235,21 +235,27 @@ function bind(redraw) {
       return;
     }
 
-    const c = backup.counts ?? {};
+    // counts は parseBackup が検証済みレコードから数えた値。ファイル中の値は使わない
+    const c = backup.counts;
+    const n = (v) => Number(v) || 0;
+    const dropped = backup.dropped ?? {};
     const mode = await dialog({
       title: 'バックアップを読み込む',
       submitLabel: '読み込む',
       body: `
         <p class="small muted">${escapeHtml(file.name)}<br>
-          書き出し日時: ${escapeHtml(backup.exportedAt ?? '不明')}（v${escapeHtml(backup.appVersion ?? '?')}）</p>
+          書き出し日時: ${escapeHtml(backup.meta.exportedAt || '不明')}（v${escapeHtml(backup.meta.appVersion || '?')}）</p>
         <div class="card card--flat" style="margin:12px 0">
           <div class="statgrid">
-            <div><div class="stat__n">${c.prompts ?? 0}</div><div class="stat__l">プロンプト</div></div>
-            <div><div class="stat__n">${c.revisions ?? 0}</div><div class="stat__l">版</div></div>
-            <div><div class="stat__n">${c.snippets ?? 0}</div><div class="stat__l">部品</div></div>
-            <div><div class="stat__n">${c.folders ?? 0}</div><div class="stat__l">フォルダ</div></div>
+            <div><div class="stat__n">${n(c.prompts)}</div><div class="stat__l">プロンプト</div></div>
+            <div><div class="stat__n">${n(c.revisions)}</div><div class="stat__l">版</div></div>
+            <div><div class="stat__n">${n(c.snippets)}</div><div class="stat__l">部品</div></div>
+            <div><div class="stat__n">${n(c.folders)}</div><div class="stat__l">フォルダ</div></div>
           </div>
         </div>
+        ${n(dropped.orphanRevisions) || n(dropped.duplicateRevisions) ? `<p class="small muted">
+          取り込めない版を ${n(dropped.orphanRevisions) + n(dropped.duplicateRevisions)} 件除きました
+          （元のプロンプトが無い、または番号が重複）。</p>` : ''}
         <div class="field">
           <span class="field__label">取り込み方</span>
           <label class="switch" style="align-items:flex-start">
@@ -276,7 +282,8 @@ function bind(redraw) {
       const result = await importBackup(backup, { mode });
       applyTheme();
       redraw();
-      toast(`読み込みました（プロンプト ${result.prompts} / 版 ${result.revisions} / 部品 ${result.snippets}）`);
+      toast(`読み込みました（プロンプト ${result.prompts} / 版 ${result.revisions} / 部品 ${result.snippets}）`
+        + (result.repaired ? `・版番号を ${result.repaired} 件直しました` : ''));
     } catch (err) {
       await alertDialog('読み込みに失敗しました', String(err?.message ?? err));
     }
