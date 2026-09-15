@@ -43,3 +43,30 @@ test('追加と削除を区別する', () => {
   const r = D.diffSections([S('a', 1, 'A', '')], [S('b', 1, 'B', '')]);
   assert.deepEqual(r.map((e) => e.status).sort(), ['added', 'removed']);
 });
+
+test('本文以外（タイトル・概要・タグ・変数）の変化も拾う', () => {
+  const a = { title: 'A', summary: '', tags: ['x'], variables: { v: '1' } };
+  const b = { title: 'B', summary: 'S', tags: ['x', 'y'], variables: { v: '2' } };
+  const labels = D.diffMeta(a, b).map((m) => m.label);
+  assert.deepEqual(labels, ['タイトル', '概要', 'タグ', '変数の値']);
+});
+
+test('同じ内容ならメタ差分は出ない', () => {
+  const a = { title: 'A', summary: 'S', tags: ['x'], variables: { v: '1' } };
+  assert.deepEqual(D.diffMeta(a, { ...a }), []);
+});
+
+test('並び順だけ入れ替えた場合も変更として拾う', () => {
+  // 入れ替えは「片方が動いた」と記録される（LCS に残らなかった側）。
+  // 以前は両方とも same になり「違いはありません」と出てしまっていた。
+  const a = [S('a', 1, 'A', 'x'), S('b', 1, 'B', 'y')];
+  const b = [S('b', 1, 'B', 'y'), S('a', 1, 'A', 'x')];
+  const r = D.diffSections(a, b);
+  assert.equal(r.filter((e) => e.moved).length, 1, '並び替えが検出されていない');
+  assert.ok(r.some((e) => e.status === 'modified'), '変更として現れていない');
+});
+
+test('並びが変わっていなければ moved は立たない', () => {
+  const a = [S('a', 1, 'A', 'x'), S('b', 1, 'B', 'y')];
+  assert.ok(D.diffSections(a, a.map((s) => ({ ...s }))).every((e) => !e.moved));
+});

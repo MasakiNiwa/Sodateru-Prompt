@@ -16,7 +16,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 壊れたものを公開しないよう、公開の前にテストを通す
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm test
+
   deploy:
+    needs: test
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

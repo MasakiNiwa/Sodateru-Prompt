@@ -128,6 +128,8 @@ export function openPalette() {
   };
 
   const onKey = (e) => {
+    // 日本語変換中の Enter は候補の確定なので、こちらでは拾わない
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, results.length - 1); highlight(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); highlight(); }

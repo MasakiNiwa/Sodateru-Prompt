@@ -161,18 +161,27 @@ export function diffSections(oldSections = [], newSections = []) {
   const newById = new Map(newSections.map((s) => [s.id, s]));
   const result = [];
 
+  // 両方に残っている id の並びを比べ、順番が入れ替わったものを拾う。
+  // LCS に残らなかった id が「動いた」セクション。
+  const commonOld = oldSections.map((s) => s.id).filter((id) => newById.has(id));
+  const commonNew = newSections.map((s) => s.id).filter((id) => oldById.has(id));
+  const kept = new Set(diffArrays(commonOld, commonNew).filter(([op]) => op === '=').map(([, id]) => id));
+  const movedIds = new Set(commonNew.filter((id) => !kept.has(id)));
+
   for (const s of newSections) {
     const prev = oldById.get(s.id);
     if (!prev) {
       result.push({ status: 'added', title: s.title || '(無題のセクション)', next: s });
     } else {
       const levelChanged = (prev.level ?? 1) !== (s.level ?? 1);
+      const moved = movedIds.has(s.id);
       const changed = prev.body !== s.body || prev.title !== s.title
-        || prev.kind !== s.kind || prev.enabled !== s.enabled || levelChanged;
+        || prev.kind !== s.kind || prev.enabled !== s.enabled || levelChanged || moved;
       result.push({
         status: changed ? 'modified' : 'same',
         title: s.title || prev.title || '(無題のセクション)',
         levelChanged,
+        moved,
         old: prev,
         next: s,
       });
@@ -184,4 +193,43 @@ export function diffSections(oldSections = [], newSections = []) {
     }
   }
   return result;
+}
+
+/** 版に含まれるメタ情報（本文以外）の変化 */
+const META_FIELDS = [
+  { key: 'title', label: 'タイトル' },
+  { key: 'summary', label: '概要' },
+];
+
+const asText = (v) => {
+  if (v === undefined || v === null) return '';
+  if (Array.isArray(v)) return v.join(', ');
+  if (typeof v === 'object') {
+    return Object.entries(v).map(([k, val]) => `${k}=${val}`).join(' / ');
+  }
+  return String(v);
+};
+
+/**
+ * タイトル・概要・タグ・変数の変化を並べる。
+ * セクション差分だけを見ていると、これらの変更が「違いはありません」に
+ * 見えてしまうため、版の中身と同じ範囲を比べる。
+ * @returns {Array<{label:string, before:string, after:string}>}
+ */
+export function diffMeta(oldSnap = {}, newSnap = {}) {
+  const out = [];
+  for (const { key, label } of META_FIELDS) {
+    if ((oldSnap[key] ?? '') !== (newSnap[key] ?? '')) {
+      out.push({ label, before: asText(oldSnap[key]), after: asText(newSnap[key]) });
+    }
+  }
+  const beforeTags = asText(oldSnap.tags ?? []);
+  const afterTags = asText(newSnap.tags ?? []);
+  if (beforeTags !== afterTags) out.push({ label: 'タグ', before: beforeTags, after: afterTags });
+
+  const beforeVars = asText(oldSnap.variables ?? {});
+  const afterVars = asText(newSnap.variables ?? {});
+  if (beforeVars !== afterVars) out.push({ label: '変数の値', before: beforeVars, after: afterVars });
+
+  return out;
 }

@@ -754,17 +754,10 @@ html[data-theme="dark"] .snackbar button, :root[data-theme="dark"] .snackbar but
 @media (min-width: 900px) { :root { --sec-indent: 26px; } }
 
 .secard {
-  /* 階層で字下げしない。深さはガイド線と見出しの大きさで表し、
-     本文の幅は階層によらず一定に保つ */
-  border-left: 3px solid var(--md-outline-variant);
+  /* 階層で字下げしない。深さは左端の線とガイド線と見出しの大きさで表し、
+     本文の幅は階層によらず一定に保つ（規則は 20 節にまとめてある） */
   transition: border-color var(--motion), opacity var(--motion), box-shadow var(--motion);
 }
-/* 階層は 1 色の濃淡で表す（色数を増やさない） */
-.secard[data-level="1"] { border-left-color: var(--md-primary); }
-.secard[data-level="2"] { border-left-color: color-mix(in srgb, var(--md-primary) 55%, var(--md-outline-variant)); }
-.secard[data-level="3"] { border-left-color: color-mix(in srgb, var(--md-primary) 28%, var(--md-outline-variant)); }
-.secard[data-level="4"] { border-left-color: var(--md-outline-variant); }
-
 .secard[data-level="1"] .secard__title { font-size: 1rem; font-weight: 700; }
 .secard[data-level="2"] .secard__title { font-size: .94rem; }
 .secard[data-level="3"] .secard__title,
@@ -1038,14 +1031,13 @@ details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; 
 .secdoc {
   position: relative;
   padding: 10px 12px 12px 10px;
-  border-left: 3px solid transparent;
+  border-left: var(--lv-width, 3px) var(--lv-style, solid) var(--lv-color, var(--md-outline-variant));
   border-radius: var(--r-s);
   cursor: text;
-  transition: background var(--motion), border-color var(--motion);
+  transition: background var(--motion);
 }
 .secdoc + .secdoc { margin-top: 2px; }
 .secdoc:hover { background: var(--md-surface-container-low); }
-.secdoc:hover, .secdoc:focus-visible { border-left-color: var(--md-outline-variant); }
 .secdoc:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 0; }
 .secdoc.is-disabled { opacity: .5; }
 
@@ -1095,7 +1087,6 @@ details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; 
 /* タッチ端末はホバーがないので、常に薄く見せておく */
 @media (hover: none) {
   .secdoc__fold, .secdoc__menu { opacity: .45; }
-  .secdoc { border-left-color: var(--md-outline-variant); }
 }
 
 /* 編集カードは読む姿と同じ位置に収まるよう、左の余白を合わせる */
@@ -1108,3 +1099,39 @@ details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; 
 .secdoc[data-level="1"] { margin-top: 14px; }
 .secdoc:first-child { margin-top: 0; }
 .secdoc + .secdoc { margin-top: 4px; }
+
+/* 保存できていないことは、文字の色でもすぐ分かるようにする */
+[data-dirty].is-error { color: var(--md-error); font-weight: 600; }
+
+/* ---------- 20. 階層の見分け（v0.6） ---------- */
+
+/*
+ * 字下げを使わずに深さを示す。3 つの手がかりを重ねる:
+ *   1. 左端の線の太さ・色（浅いほど濃く太い）
+ *   2. 線の種類（3 段目は二重線、4 段目は点線）
+ *   3. 見出しの前のガイド線の本数（= 深さ - 1）
+ */
+.secdoc[data-level="1"], .secard[data-level="1"] {
+  --lv-width: 5px; --lv-style: solid; --lv-color: var(--md-primary);
+}
+.secdoc[data-level="2"], .secard[data-level="2"] {
+  --lv-width: 4px; --lv-style: solid;
+  --lv-color: color-mix(in srgb, var(--md-primary) 62%, var(--md-outline-variant));
+}
+.secdoc[data-level="3"], .secard[data-level="3"] {
+  --lv-width: 4px; --lv-style: double;
+  --lv-color: color-mix(in srgb, var(--md-primary) 45%, var(--md-outline-variant));
+}
+.secdoc[data-level="4"], .secard[data-level="4"] {
+  --lv-width: 4px; --lv-style: dotted; --lv-color: var(--md-outline);
+}
+
+/* 編集カードも同じ規則にそろえる（v0.2 で入れた一律 3px solid を置き換える） */
+.secard {
+  border-left: var(--lv-width, 3px) var(--lv-style, solid) var(--lv-color, var(--md-outline-variant));
+}
+.secard.is-selected { border-left-color: var(--lv-color, var(--md-primary)); }
+
+/* ガイド線も深さに合わせて濃さを変える */
+.secard__rail i { background: var(--lv-color, var(--md-outline-variant)); opacity: .75; }
+.secdoc[data-level="1"] .secard__rail, .secard[data-level="1"] .secard__rail { display: none; }

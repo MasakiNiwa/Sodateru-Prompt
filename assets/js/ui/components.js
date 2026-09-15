@@ -77,6 +77,8 @@ export function dialog(opts) {
     };
 
     const onKey = (e) => {
+      // 日本語変換中の Enter / Esc は入力操作なので、ダイアログでは拾わない
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape') { e.stopPropagation(); close(null); return; }
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); return; }
       if (e.key !== 'Tab') return;
@@ -146,6 +148,8 @@ export function promptDialog(title, {
       const input = root.querySelector('[data-f="v"]');
       if (!multiline) {
         input.addEventListener('keydown', (e) => {
+          // 変換確定の Enter でダイアログを閉じてしまわないようにする
+          if (e.isComposing || e.keyCode === 229) return;
           if (e.key === 'Enter') { e.preventDefault(); api.submit(); }
         });
       }

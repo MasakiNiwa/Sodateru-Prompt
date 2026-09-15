@@ -15,6 +15,27 @@ import { now, clone, normalize } from './util.js';
 
 const listeners = new Set();
 
+/**
+ * 同じブラウザの別タブへ変更を知らせる。
+ * IndexedDB には変更通知がないので、これが無いと古いタブが新しい内容を
+ * 上書きしてしまう。届かなくても savePrompt の競合検知が最後の砦になる。
+ */
+const channel = (() => {
+  try { return new BroadcastChannel('sodateru-prompt'); } catch { return null; }
+})();
+
+const broadcast = (reason, id) => {
+  try { channel?.postMessage({ reason, id, at: Date.now() }); } catch { /* 無視してよい */ }
+};
+
+if (channel) {
+  channel.onmessage = async () => {
+    // 何が変わったか細かく追わず、キャッシュを取り直して画面に知らせる
+    await reloadCache();
+    emit('external');
+  };
+}
+
 export const state = {
   ready: false,
   folders: [],
@@ -49,6 +70,18 @@ export async function init() {
   state.settings = normalizeSettings(settingsRec?.value);
   state.ready = true;
   emit('init');
+}
+
+/** 画面の状態を保ったまま、メモリ上のキャッシュだけ取り直す */
+async function reloadCache() {
+  const [folders, prompts, snippets] = await Promise.all([
+    db.getAll(db.STORES.folders),
+    db.getAll(db.STORES.prompts),
+    db.getAll(db.STORES.snippets),
+  ]);
+  state.folders = folders.sort((a, b) => a.order - b.order);
+  state.prompts = prompts;
+  state.snippets = snippets;
 }
 
 /** バックアップ復元後などにキャッシュを取り直す */
@@ -142,11 +175,26 @@ export async function addPrompt(patch = {}) {
   return prompt;
 }
 
-export async function savePrompt(prompt, { touch = true } = {}) {
+/**
+ * @param {{touch?:boolean, expectUnchanged?:boolean}} opts
+ *   expectUnchanged: 他のタブが先に書き込んでいたら上書きせず例外にする。
+ *   自動保存のように「古い内容で上書きしてしまう」ことが致命的な場面で使う。
+ */
+export async function savePrompt(prompt, { touch = true, expectUnchanged = false } = {}) {
+  if (expectUnchanged) {
+    const current = await db.get(db.STORES.prompts, prompt.id);
+    if (current && Number.isFinite(prompt.updatedAt) && current.updatedAt > prompt.updatedAt) {
+      const err = new Error('ほかのタブでこのプロンプトが更新されています。');
+      err.code = 'conflict';
+      err.current = current;
+      throw err;
+    }
+  }
   const next = { ...prompt, updatedAt: touch ? now() : prompt.updatedAt };
   await db.put(db.STORES.prompts, next);
   state.prompts = state.prompts.map((p) => (p.id === next.id ? next : p));
   emit('prompts');
+  broadcast('prompts', next.id);
   return next;
 }
 
@@ -184,15 +232,31 @@ export async function listRevisions(promptId) {
 
 export const getRevision = (id) => db.get(db.STORES.revisions, id);
 
+/** そのプロンプトが次に使うべき版番号。既存の履歴より必ず大きくする */
+async function nextVersionFor(prompt) {
+  const revs = await db.getAllByIndex(db.STORES.revisions, 'promptId', IDBKeyRange.only(prompt.id));
+  const highest = revs.reduce((m, r) => Math.max(m, r.version ?? 0), 0);
+  return Math.max(prompt.lastVersion ?? 0, prompt.revisionCount ?? 0, highest) + 1;
+}
+
 /** 現在の作業コピーを版として確定する */
 export async function commitRevision(promptId, message) {
   const prompt = getPrompt(promptId);
   if (!prompt) throw new Error('プロンプトが見つかりません');
-  const version = (prompt.revisionCount ?? 0) + 1;
+  const version = await nextVersionFor(prompt);
   const rev = createRevision(prompt, message, version);
-  await db.put(db.STORES.revisions, rev);
-  await savePrompt({ ...prompt, revisionCount: version, status: prompt.status === 'draft' ? 'active' : prompt.status });
+  const nextPrompt = {
+    ...prompt,
+    lastVersion: version,
+    revisionCount: (prompt.revisionCount ?? 0) + 1,
+    status: prompt.status === 'draft' ? 'active' : prompt.status,
+    updatedAt: now(),
+  };
+  // 履歴の追加とプロンプト側の更新は、まとめて成功／失敗させる
+  await db.commitRevisionTx(rev, nextPrompt);
+  state.prompts = state.prompts.map((p) => (p.id === nextPrompt.id ? nextPrompt : p));
   emit('revisions');
+  broadcast('revisions', promptId);
   return rev;
 }
 
@@ -207,10 +271,51 @@ export async function saveRevisionMessage(revId, message) {
 }
 
 export async function deleteRevision(revId, promptId) {
-  await db.del(db.STORES.revisions, revId);
+  const prompt = getPrompt(promptId);
+  if (!prompt) {
+    await db.del(db.STORES.revisions, revId);
+    emit('revisions');
+    return promptId;
+  }
+  // 残数は減らすが lastVersion は減らさない（同じ番号を二度使わないため）
+  const next = {
+    ...prompt,
+    revisionCount: Math.max(0, (prompt.revisionCount ?? 0) - 1),
+    updatedAt: now(),
+  };
+  await db.deleteRevisionTx(revId, next);
+  state.prompts = state.prompts.map((p) => (p.id === next.id ? next : p));
   emit('revisions');
-  // revisionCount は「次に振る番号」を決めるカウンタなので減らさない（番号の重複を防ぐ）
+  broadcast('revisions', promptId);
   return promptId;
+}
+
+/**
+ * 履歴の実態に合わせて、残数と採番カウンタを直す。
+ * 古いバックアップをマージしたあとなど、両者がずれうる場面で呼ぶ。
+ * @returns {number} 直したプロンプトの数
+ */
+export async function reconcileRevisionCounters(promptIds = null) {
+  const targets = promptIds
+    ? state.prompts.filter((p) => promptIds.includes(p.id))
+    : state.prompts;
+  const fixed = [];
+  for (const prompt of targets) {
+    // eslint-disable-next-line no-await-in-loop
+    const revs = await db.getAllByIndex(db.STORES.revisions, 'promptId', IDBKeyRange.only(prompt.id));
+    const highest = revs.reduce((m, r) => Math.max(m, r.version ?? 0), 0);
+    const lastVersion = Math.max(prompt.lastVersion ?? 0, prompt.revisionCount ?? 0, highest);
+    if (revs.length !== prompt.revisionCount || lastVersion !== prompt.lastVersion) {
+      fixed.push({ ...prompt, revisionCount: revs.length, lastVersion });
+    }
+  }
+  if (fixed.length) {
+    await db.putMany(db.STORES.prompts, fixed);
+    const byId = new Map(fixed.map((p) => [p.id, p]));
+    state.prompts = state.prompts.map((p) => byId.get(p.id) ?? p);
+    emit('prompts');
+  }
+  return fixed.length;
 }
 
 /** 過去の版の内容を作業コピーへ復元する */
