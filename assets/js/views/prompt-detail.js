@@ -190,13 +190,14 @@ const redrawPanel = () => {
 /* ---------------- タブ: 編集 ---------------- */
 
 /*
- * 編集画面の考え方（v0.4）
+ * 編集画面の考え方（v0.5）
  *
- * ・普段は「書く」ことだけに集中できるよう、カードに常時出す操作を
- *   〈折りたたみ・見出し・メニュー〉の 3 つに絞る。
- * ・階層・役割・移動は、選んでいるセクションにだけ現れる。
+ * ・編集タブは既定で「読む画面」。全セクションが出来上がりに近い姿で並び、
+ *   操作のための部品は出さない。どこも選んでいなければ全文プレビューそのもの。
+ * ・触ったセクションだけが編集カードに変わり、そのセクションの操作だけが現れる。
+ *   Esc か余白のクリックで読む画面に戻る。
+ * ・セクションの切れ目は、見出しの大きさ・階層のガイド線・薄い区切りで示す。
  * ・並べ替えや階層の作り直しは「構造整理」モードへ分ける。
- * ・全体の把握はアウトライン（目次）に任せ、カードの横幅は階層によらず一定にする。
  */
 
 const BODY_MIN_H = 48;    // 空でもこの高さは確保する
@@ -249,12 +250,40 @@ const refreshPreview = debounce(() => {
   if (el) el.textContent = previewText();
 }, 200);
 
-/* ---------------- セクションカード ---------------- */
+/* ---------------- 読む姿（未選択のセクション） ---------------- */
 
 /**
- * 選んだときだけ出る操作列。
- * 位置に応じた可否はここで確定するので、構造が変わったら再描画する。
+ * 出来上がりに近い見た目。操作の部品は置かず、
+ * 折りたたみと ⋮ だけをホバー時に薄く出す。
  */
+function sectionDoc(s, i, sections) {
+  const level = levelOf(s);
+  const folded = view.folded.has(s.id);
+  const childCount = subtreeRange(sections, i)[1] - i - 1;
+  const body = s.body.trim();
+
+  return `
+    <article class="secdoc ${s.enabled === false ? 'is-disabled' : ''} ${folded ? 'is-folded' : ''}"
+      data-sec="${escapeHtml(s.id)}" data-level="${level}" tabindex="0"
+      role="button" aria-label="${escapeHtml(sectionLabel(s))} を編集">
+      <div class="secdoc__head">
+        <button type="button" class="secdoc__fold" data-act="fold" tabindex="-1"
+          aria-label="${folded ? '広げる' : '折りたたむ'}" title="${folded ? '広げる' : '折りたたむ'}"
+          >${icon(folded ? 'chev-right' : 'chev-down', 'icon icon-sm')}</button>
+        ${levelRail(level)}
+        <h3 class="secdoc__title">${escapeHtml(sectionLabel(s))}</h3>
+        ${folded && childCount ? `<span class="secdoc__badge">+${childCount}</span>` : ''}
+        ${s.enabled === false ? '<span class="secdoc__badge">出力しない</span>' : ''}
+        <span class="spacer"></span>
+        <button type="button" class="iconbtn iconbtn--sm secdoc__menu" data-act="menu" tabindex="-1"
+          aria-label="セクションのメニュー">${icon('more', 'icon icon-sm')}</button>
+      </div>
+      ${body && !folded ? `<div class="secdoc__body">${escapeHtml(body)}</div>` : ''}
+    </article>`;
+}
+
+/* ---------------- 編集カード（選んでいるセクション） ---------------- */
+
 function sectionTools(s, i, sections) {
   const level = levelOf(s);
   return `
@@ -270,7 +299,8 @@ function sectionTools(s, i, sections) {
       <button type="button" class="iconbtn iconbtn--sm" data-act="down" aria-label="下へ移動" title="下へ移動">${icon('down', 'icon icon-sm')}</button>
       <span class="spacer"></span>
       <span class="tiny muted" data-chars>${s.body.length.toLocaleString('ja-JP')} 文字</span>
-      <button type="button" class="btn btn--text btn--sm" data-act="focus">${icon('expand', 'icon icon-sm')} 全文を編集</button>
+      <button type="button" class="btn btn--text btn--sm" data-act="focus">${icon('expand', 'icon icon-sm')} 全文</button>
+      <button type="button" class="btn btn--text btn--sm" data-act="done">${icon('check', 'icon icon-sm')} 閉じる</button>
     </div>`;
 }
 
@@ -279,7 +309,6 @@ function sectionCard(s, i, sections) {
   const childCount = subtreeRange(sections, i)[1] - i - 1;
   const folded = view.folded.has(s.id);
   const structure = view.mode === 'structure';
-  const selected = view.selectedId === s.id;
 
   const head = `
     <header class="secard__head">
@@ -296,12 +325,8 @@ function sectionCard(s, i, sections) {
         aria-label="セクションのメニュー">${icon('more', 'icon icon-sm')}</button>
     </header>`;
 
-  const classes = [
-    'secard',
-    s.enabled === false ? 'is-disabled' : '',
-    folded ? 'is-folded' : '',
-    selected ? 'is-selected' : '',
-  ].filter(Boolean).join(' ');
+  const classes = ['secard', s.enabled === false ? 'is-disabled' : '', folded ? 'is-folded' : '', 'is-selected']
+    .filter(Boolean).join(' ');
 
   // たたんでいる／構造整理中は本文を出さず、1 行の抜粋だけ見せる
   if (folded || structure) {
@@ -314,7 +339,7 @@ function sectionCard(s, i, sections) {
         <span class="spacer"></span>
         <span class="tiny">${s.body.length.toLocaleString('ja-JP')} 文字</span>
       </div>
-      ${structure ? sectionTools(s, i, sections) : ''}
+      ${sectionTools(s, i, sections)}
     </article>`;
   }
 
@@ -327,6 +352,52 @@ function sectionCard(s, i, sections) {
     </article>`;
 }
 
+/** 添字のセクションを、いまのモードと選択状態にふさわしい姿で描く */
+function sectionNode(i, sections) {
+  const s = sections[i];
+  if (view.mode === 'structure' || view.selectedId === s.id) return sectionCard(s, i, sections);
+  return sectionDoc(s, i, sections);
+}
+
+/* ---------------- 選択の切り替え ---------------- */
+
+/**
+ * 選んだセクションだけを編集カードに差し替える。
+ * 画面全体を描き直さないので、入力中にフォーカスを失わない。
+ * @param {string|null} id 選ぶセクション。null で全部を読む姿に戻す
+ * @param {{focus?: 'title'|'body'|null}} opts
+ */
+function setSelection(id, { focus = 'body' } = {}) {
+  if (view.mode === 'structure') return;
+  const sections = view.draft.sections;
+  const prevId = view.selectedId;
+  if (prevId === id) return;
+
+  const swap = (sectionId) => {
+    const el = document.querySelector(`[data-sec="${CSS.escape(sectionId)}"]`);
+    const i = sections.findIndex((s) => s.id === sectionId);
+    if (!el || i < 0) return null;
+    el.outerHTML = sectionNode(i, sections);
+    return document.querySelector(`[data-sec="${CSS.escape(sectionId)}"]`);
+  };
+
+  view.selectedId = id;
+  if (prevId) swap(prevId);
+
+  if (id) {
+    const el = swap(id);
+    const target = el?.querySelector(focus === 'title' ? '[data-f="title"]' : '[data-f="body"]');
+    if (target) {
+      autoGrow(el.querySelector('.secard__body'));
+      target.focus({ preventScroll: true });
+      if (target.tagName === 'TEXTAREA') target.setSelectionRange(target.value.length, target.value.length);
+    }
+  }
+
+  document.querySelectorAll('.outline__item.is-current').forEach((el) => el.classList.remove('is-current'));
+  if (id) document.querySelector(`.outline__item[data-goto="${CSS.escape(id)}"]`)?.classList.add('is-current');
+}
+
 /* ---------------- アウトライン（目次） ---------------- */
 
 function outlineItems(sections) {
@@ -335,7 +406,7 @@ function outlineItems(sections) {
     <li><button type="button" class="outline__item ${view.selectedId === s.id ? 'is-current' : ''}"
       data-goto="${escapeHtml(s.id)}" style="--d:${levelOf(s) - 1}" data-level="${levelOf(s)}">
       <span>${escapeHtml(sectionLabel(s))}</span>
-      ${s.enabled === false ? `<span class="tiny muted">除外</span>` : ''}
+      ${s.enabled === false ? '<span class="tiny muted">除外</span>' : ''}
     </button></li>`).join('')}</ul>`;
 }
 
@@ -367,36 +438,26 @@ async function openOutlineDialog() {
 
 /** アウトラインから本文へ飛ぶ */
 function jumpToSection(sectionId) {
-  // 折りたたまれた親の中にいるなら、見えるところまで開く
   const sections = view.draft.sections;
   const idx = sections.findIndex((s) => s.id === sectionId);
   if (idx < 0) return;
-  let changed = false;
+
+  // 折りたたまれた親の中にいるなら、見えるところまで開く
+  let changed = view.folded.delete(sectionId);
   for (let i = idx - 1; i >= 0; i--) {
-    if (levelOf(sections[i]) < levelOf(sections[idx]) && view.folded.has(sections[i].id)) {
-      view.folded.delete(sections[i].id);
-      changed = true;
-    }
+    if (levelOf(sections[i]) < levelOf(sections[idx]) && view.folded.delete(sections[i].id)) changed = true;
   }
-  view.folded.delete(sectionId);
-  view.selectedId = sectionId;
   persistView();
-  if (changed) redrawPanel();
-  else selectSection(sectionId);
+
+  if (changed) {
+    view.selectedId = sectionId;
+    redrawPanel();
+  } else {
+    setSelection(sectionId, { focus: 'body' });
+  }
 
   const card = document.querySelector(`[data-sec="${CSS.escape(sectionId)}"]`);
   card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  card?.querySelector('[data-f="body"], [data-f="title"]')?.focus({ preventScroll: true });
-}
-
-/** 選択中のセクションを切り替える。再描画しないのでフォーカスを失わない */
-function selectSection(sectionId) {
-  if (view.selectedId === sectionId) return;
-  view.selectedId = sectionId;
-  document.querySelectorAll('.secard.is-selected').forEach((el) => el.classList.remove('is-selected'));
-  document.querySelector(`[data-sec="${CSS.escape(sectionId)}"]`)?.classList.add('is-selected');
-  document.querySelectorAll('.outline__item.is-current').forEach((el) => el.classList.remove('is-current'));
-  document.querySelector(`.outline__item[data-goto="${CSS.escape(sectionId)}"]`)?.classList.add('is-current');
 }
 
 /* ---------------- 編集タブ全体 ---------------- */
@@ -455,8 +516,8 @@ function drawEditor(panel) {
       </aside>
 
       <div class="edit-main">
-        <div class="seceditor ${structure ? 'is-structure' : ''}" data-sections>
-          ${shown.map((i) => sectionCard(p.sections[i], i, p.sections)).join('')}
+        <div class="seceditor ${structure ? 'is-structure' : 'is-doc'}" data-sections>
+          ${shown.map((i) => sectionNode(i, p.sections)).join('')}
         </div>
 
         ${p.sections.length ? '' : emptyState('notes', 'セクションがありません', '見出しを立てて、好きなだけ重ねていけます。')}
@@ -565,6 +626,7 @@ function bindEditor(panel) {
     const btn = e.target.closest('[data-v]');
     if (!btn || btn.dataset.v === view.mode) return;
     view.mode = btn.dataset.v;
+    if (view.mode === 'structure') view.selectedId = null;
     redrawPanel();
   });
 
@@ -616,14 +678,70 @@ function bindEditor(panel) {
   const list = panel.querySelector('[data-sections]');
   if (!list) return;
 
-  // 触れたセクションを「選択中」にする。再描画しないのでフォーカスは保たれる
-  list.addEventListener('focusin', (e) => {
-    const card = e.target.closest('[data-sec]');
-    if (card) selectSection(card.dataset.sec);
+  // 余白を押したら読む画面へ戻す
+  list.addEventListener('mousedown', (e) => {
+    if (e.target === list) setSelection(null);
   });
+
   list.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act]');
     const card = e.target.closest('[data-sec]');
-    if (card) selectSection(card.dataset.sec);
+    if (!card) return;
+    const id = card.dataset.sec;
+    const idx = indexOf(id);
+    const s = p.sections[idx];
+    if (!s) return;
+
+    if (btn) {
+      switch (btn.dataset.act) {
+        case 'fold':
+          if (view.folded.has(id)) view.folded.delete(id);
+          else view.folded.add(id);
+          persistView();
+          redrawPanel();
+          return;
+        case 'up': setSections(moveUp(p.sections, idx)); redrawPanel(); return;
+        case 'down': setSections(moveDown(p.sections, idx)); redrawPanel(); return;
+        case 'indent': setSections(shiftLevel(p.sections, idx, 1)); redrawPanel(); return;
+        case 'outdent': setSections(shiftLevel(p.sections, idx, -1)); redrawPanel(); return;
+        case 'focus': focusEditFlow(id); return;
+        case 'done': setSelection(null); return;
+        case 'menu': openSectionMenu(btn, id); return;
+        default: break;
+      }
+    }
+
+    // 読む姿のセクションを押したら、そこだけ編集カードに変える
+    if (card.classList.contains('secdoc')) {
+      setSelection(id, { focus: e.target.closest('.secdoc__title') ? 'title' : 'body' });
+    }
+  });
+
+  // キーボードからも読む姿のセクションを開けるようにする
+  list.addEventListener('keydown', (e) => {
+    const doc = e.target.closest?.('.secdoc');
+    if (doc && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      setSelection(doc.dataset.sec, { focus: 'body' });
+      return;
+    }
+    if (e.key === 'Escape' && view.selectedId) {
+      e.preventDefault();
+      const el = document.querySelector(`[data-sec="${CSS.escape(view.selectedId)}"]`);
+      setSelection(null);
+      el?.focus?.();
+      return;
+    }
+    // 階層の増減はショートカットでも行える
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== ']' && e.key !== '[')) return;
+    const card = e.target.closest('[data-sec]');
+    if (!card) return;
+    e.preventDefault();
+    const id = card.dataset.sec;
+    const field = e.target.dataset.f ?? 'title';
+    setSections(shiftLevel(p.sections, indexOf(id), e.key === ']' ? 1 : -1));
+    redrawPanel();
+    document.querySelector(`[data-sec="${CSS.escape(id)}"] [data-f="${field}"]`)?.focus();
   });
 
   // 入力: 再描画せずモデルだけ更新（フォーカスを保つ）
@@ -665,45 +783,6 @@ function bindEditor(panel) {
     for (let n = 0; n < Math.abs(delta); n++) next = shiftLevel(next, i, Math.sign(delta));
     setSections(next);
     redrawPanel();
-  });
-
-  // 階層の増減はショートカットでも行える
-  list.addEventListener('keydown', (e) => {
-    if (!(e.ctrlKey || e.metaKey) || (e.key !== ']' && e.key !== '[')) return;
-    const card = e.target.closest('[data-sec]');
-    if (!card) return;
-    e.preventDefault();
-    const id = card.dataset.sec;
-    const field = e.target.dataset.f ?? 'title';
-    setSections(shiftLevel(p.sections, indexOf(id), e.key === ']' ? 1 : -1));
-    redrawPanel();
-    document.querySelector(`[data-sec="${CSS.escape(id)}"] [data-f="${field}"]`)?.focus();
-  });
-
-  list.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-act]');
-    if (!btn) return;
-    const card = btn.closest('[data-sec]');
-    const id = card.dataset.sec;
-    const idx = indexOf(id);
-    const s = p.sections[idx];
-    if (!s) return;
-
-    switch (btn.dataset.act) {
-      case 'fold':
-        if (view.folded.has(id)) view.folded.delete(id);
-        else view.folded.add(id);
-        persistView();
-        redrawPanel();
-        break;
-      case 'up': setSections(moveUp(p.sections, idx)); redrawPanel(); break;
-      case 'down': setSections(moveDown(p.sections, idx)); redrawPanel(); break;
-      case 'indent': setSections(shiftLevel(p.sections, idx, 1)); redrawPanel(); break;
-      case 'outdent': setSections(shiftLevel(p.sections, idx, -1)); redrawPanel(); break;
-      case 'focus': focusEditFlow(id); break;
-      case 'menu': openSectionMenu(btn, id); break;
-      default: break;
-    }
   });
 
   bindDragAndDrop(list);
@@ -834,6 +913,7 @@ function openSectionMenu(anchor, sectionId) {
             { submitLabel: '削除する', danger: true });
           if (!ok) return;
         }
+        if (view.selectedId === sectionId) view.selectedId = null;
         p.sections.slice(idx, end).forEach((x) => view.folded.delete(x.id));
         persistView();
         setSections([...p.sections.slice(0, idx), ...p.sections.slice(end)]);

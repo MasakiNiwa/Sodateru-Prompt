@@ -910,13 +910,11 @@ details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; 
 
 /* 選んでいるとき（と構造整理中）だけ現れる操作列 */
 .secard__tools {
-  display: none;
+  display: flex;
   align-items: center; gap: 2px; flex-wrap: wrap;
   padding: 4px 8px 6px 10px;
   border-top: 1px solid var(--md-outline-variant);
 }
-.secard.is-selected .secard__tools,
-.seceditor.is-structure .secard__tools { display: flex; }
 .secard__tools-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--md-outline-variant); }
 
 .secard__peek {
@@ -1028,3 +1026,85 @@ details > summary { padding: 6px 0; color: var(--md-primary); font-weight: 600; 
 .seceditor.is-structure .secard__tools [data-act="focus"],
 .seceditor.is-structure .secard__tools .spacer { display: none; }
 .seceditor.is-structure .secard__head { padding-block: 4px; }
+
+/* ---------- 19. 読む姿のセクション（v0.5） ---------- */
+
+/*
+ * 編集タブの既定は「読む画面」。出来上がりに近い見え方にして、
+ * 操作の部品はホバー／フォーカス時にだけ薄く出す。
+ */
+.seceditor.is-doc { gap: 0; }
+
+.secdoc {
+  position: relative;
+  padding: 10px 12px 12px 10px;
+  border-left: 3px solid transparent;
+  border-radius: var(--r-s);
+  cursor: text;
+  transition: background var(--motion), border-color var(--motion);
+}
+.secdoc + .secdoc { margin-top: 2px; }
+.secdoc:hover { background: var(--md-surface-container-low); }
+.secdoc:hover, .secdoc:focus-visible { border-left-color: var(--md-outline-variant); }
+.secdoc:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 0; }
+.secdoc.is-disabled { opacity: .5; }
+
+.secdoc__head { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+.secdoc__title {
+  min-width: 0; margin: 0;
+  font-size: .95rem; font-weight: 700; line-height: 1.4;
+  color: var(--md-on-surface);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.secdoc[data-level="1"] .secdoc__title { font-size: 1.02rem; }
+.secdoc[data-level="2"] .secdoc__title { font-size: .94rem; }
+.secdoc[data-level="3"] .secdoc__title,
+.secdoc[data-level="4"] .secdoc__title { font-size: .88rem; color: var(--md-on-surface-variant); }
+
+.secdoc__body {
+  margin-top: 4px; padding-left: 26px;
+  font-family: var(--font-mono); font-size: var(--editor-font-size); line-height: 1.7;
+  color: var(--md-on-surface);
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.secdoc__badge {
+  flex: none; padding: 0 7px; border-radius: var(--r-full);
+  background: var(--md-surface-container-highest); color: var(--md-on-surface-variant);
+  font-size: .68rem; font-weight: 600;
+}
+
+/* 折りたたみと ⋮ は、触れたときだけ現れる */
+.secdoc__fold, .secdoc__menu {
+  opacity: 0;
+  transition: opacity var(--motion), background var(--motion);
+}
+.secdoc:hover .secdoc__fold, .secdoc:hover .secdoc__menu,
+.secdoc:focus-within .secdoc__fold, .secdoc:focus-within .secdoc__menu,
+.secdoc:focus-visible .secdoc__fold, .secdoc:focus-visible .secdoc__menu { opacity: 1; }
+.secdoc__fold {
+  display: grid; place-items: center;
+  width: 20px; height: 24px; flex: none;
+  border: 0; border-radius: var(--r-xs);
+  background: transparent; color: var(--md-on-surface-variant); cursor: pointer;
+}
+.secdoc__fold:hover { background: color-mix(in srgb, var(--md-on-surface) 10%, transparent); }
+/* たたんでいるセクションは、触れていなくても分かるようにしておく */
+.secdoc.is-folded .secdoc__fold { opacity: 1; }
+
+/* タッチ端末はホバーがないので、常に薄く見せておく */
+@media (hover: none) {
+  .secdoc__fold, .secdoc__menu { opacity: .45; }
+  .secdoc { border-left-color: var(--md-outline-variant); }
+}
+
+/* 編集カードは読む姿と同じ位置に収まるよう、左の余白を合わせる */
+.seceditor.is-doc .secard { margin-block: 6px; }
+
+/* 読む姿 → 編集カードへ切り替わるとき、本文の左端がずれないよう位置を合わせる */
+.seceditor.is-doc .secard__body { padding-left: 36px; }
+
+/* 大見出しの前に余白を置き、文書としての区切りを作る */
+.secdoc[data-level="1"] { margin-top: 14px; }
+.secdoc:first-child { margin-top: 0; }
+.secdoc + .secdoc { margin-top: 4px; }

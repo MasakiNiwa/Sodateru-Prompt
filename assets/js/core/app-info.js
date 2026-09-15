@@ -3,8 +3,8 @@
 export const APP = {
   name: '育てるプロンプト',
   tagline: 'プロンプトを育てるシステムノート',
-  version: '0.4.0',
-  releasedAt: '2026-09-14',
+  version: '0.5.0',
+  releasedAt: '2026-09-15',
   repository: 'https://github.com/MasakiNiwa/Sodateru-Prompt',
   issues: 'https://github.com/MasakiNiwa/Sodateru-Prompt/issues',
   license: 'MIT',
@@ -12,6 +12,17 @@ export const APP = {
 
 /** ヘルプの「更新履歴」に表示する。新しい版を上に足していく */
 export const CHANGELOG = [
+  {
+    version: '0.5.0',
+    date: '2026-09-15',
+    notes: [
+      '編集タブの既定を「読む画面」にしました。全セクションが出来上がりに近い姿で並び、どこも選んでいなければ全文プレビューそのものになります',
+      '触ったセクションだけが編集カードに変わり、そのセクションの操作だけが現れます',
+      'Esc か余白のクリックで読む画面に戻ります',
+      '読む姿と編集カードで本文の左端がそろうようにし、切り替えで文字が動かないようにしました',
+      'セクションの切れ目は、見出しの大きさ・階層のガイド線・薄い区切りで示しています',
+    ],
+  },
   {
     version: '0.4.0',
     date: '2026-09-14',
